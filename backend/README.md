@@ -1,117 +1,101 @@
 # xStocks2026
 
-Real-time on-chain token transfer tracker powered by [Alchemy Custom Webhooks](https://docs.alchemy.com/reference/custom-webhook-variables) and AWS Lambda.
+Backend for xStocks — tracks wallet activity and token prices on Ethereum.
 
-## What it does
+Users register wallet addresses through the API. Alchemy Custom Webhooks push on-chain events (native transfers, internal calls, ERC-20 transfers) to a Lambda that writes them to DynamoDB. A scheduled Lambda fetches token prices every 10 minutes and stores them in a public S3 bucket. The frontend reads prices from S3 and queries the REST API for user addresses and transaction history.
 
-Monitors a set of wallet addresses for all token movement — both sending and receiving — across three transfer types:
+## Resources
 
-- **Native token transfers (external)** — direct ETH/MATIC sends between wallets
-- **Native token transfers (internal)** — contract-initiated native transfers (e.g. `.call{value: ...}`)
-- **ERC-20 token transfers** — any tracked ERC-20 token sent to or from tracked wallets
+| Resource | Purpose |
+|---|---|
+| **API Gateway** (`/v1`) | REST API for the frontend |
+| **DynamoDB** `xstocks-user-address` | Maps users to their tracked wallet addresses |
+| **DynamoDB** `xstocks-address-transaction` | Stores transactions detected by the webhook listener |
+| **S3 Bucket** (public read) | Serves `prices.json` with current token prices |
+| **Lambda** `AlchemyWebhookListener` | Receives Alchemy webhook events, writes transactions to DynamoDB |
+| **Lambda** `AddAddress` | Registers a new address for a user (DynamoDB + Alchemy webhook variables) |
+| **Lambda** `GetUserAddresses` | Returns all addresses registered by a user |
+| **Lambda** `GetAddressTransactions` | Returns transaction history for an address |
+| **Lambda** `FetchPrices` | Scheduled every 10 min — fetches token prices and writes to S3 |
+| **SSM Parameters** | Stores Alchemy auth token and webhook signing keys |
 
-Alchemy pushes webhook events to a Lambda Function URL whenever matching on-chain activity is detected.
+## API endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/address` | Register a new tracked address |
+| `GET` | `/user/{id_user}/address` | List addresses for a user |
+| `GET` | `/address/{address}/transaction` | List transactions for an address |
+
+Full API spec in [`swagger.yaml`](./swagger.yaml).
 
 ## Architecture
 
 ```
-Alchemy Custom Webhooks (x2)
-        │
-        ├── Webhook 1: ERC-20 receives + native transfers
-        ├── Webhook 2: ERC-20 sends
-        │
-        ▼
-  Lambda Function URL
-        │
-        └── Logs structured events to CloudWatch
-            ├── NATIVE_EXTERNAL
-            ├── NATIVE_INTERNAL
-            ├── ERC20_RECEIVED
-            └── ERC20_SENT
-```
+                  ┌─────────────────┐
+                  │  Alchemy Webhooks│
+                  └────────┬────────┘
+                           │
+                           ▼
+                ┌──────────────────────┐
+                │ AlchemyWebhookListener│──▶ DynamoDB (transactions)
+                └──────────────────────┘
 
-We use two webhooks because Alchemy's log topic filters are AND across positions.
-You can't do "from OR to" in a single `logs` query, so we split:
-- Webhook 1: `topics[2]` = tracked addresses (receives) + native tx/trace filters
-- Webhook 2: `topics[1]` = tracked addresses (sends)
+  ┌──────────────┐         ┌─────────────────┐
+  │  API Gateway │────────▶│  Lambda handlers │──▶ DynamoDB
+  └──────────────┘         └─────────────────┘
+
+  ┌───────────────────┐
+  │ EventBridge (10m) │──▶ FetchPrices ──▶ S3 (prices.json)
+  └───────────────────┘
+
+  Frontend ──▶ S3 (prices.json)
+  Frontend ──▶ API Gateway (addresses, transactions)
+```
 
 ## Project structure
 
 ```
 src/
-├── main.ts                          # CDK stack definition
+├── main.ts                                    # CDK stack
 └── lambda-functions/
-    ├── alchemy-webhook-listener/
-    │   ├── alchemy-webhook-listener.lambda.ts      # Lambda handler source
-    │   └── alchemy-webhook-listener-function.ts    # Projen-generated CDK construct
-    └── alchemy-setup-variables/
-        ├── alchemy-setup-variables.lambda.ts       # Variable setup handler
-        └── alchemy-setup-variables-function.ts     # Projen-generated CDK construct
+    ├── add-address/                           # POST /address
+    ├── alchemy-webhook-listener/              # Webhook receiver
+    │   ├── alchemy-webhook-listener.lambda.ts
+    │   ├── types.ts                           # Alchemy event interfaces
+    │   └── local-development/                 # Local test harness
+    ├── fetch-prices/                          # Scheduled price fetcher
+    ├── get-user-addresses/                    # GET /user/{id_user}/address
+    └── get-address-transactions/              # GET /address/{address}/transaction
 ```
-
-## Prerequisites
-
-- AWS CLI configured with credentials
-- Node.js 22+
-- Yarn 4.x
-- An [Alchemy](https://www.alchemy.com/) account
 
 ## Setup
 
-### 1. Install dependencies
-
 ```bash
 yarn install
-```
-
-### 2. Create SSM parameters
-
-```bash
-# Alchemy Auth Token (from top of https://dashboard.alchemy.com/webhooks)
-aws ssm put-parameter \
-  --name /xstocks/alchemy-auth-token \
-  --value "YOUR_ALCHEMY_AUTH_TOKEN" \
-  --type String
-
-# Signing keys — use a placeholder for now, update after creating webhooks (Step 7)
-aws ssm put-parameter \
-  --name /xstocks/alchemy-signing-keys \
-  --value "placeholder" \
-  --type String
-```
-
-### 3. Bundle and deploy
-
-```bash
 npx projen bundle
 npx projen deploy
 ```
 
-The deploy output will print `AlchemyWebhookUrl` — copy this URL.
+See the Alchemy webhook setup section below for configuring the on-chain event pipeline.
 
-### 4. Create webhook variables
-
-Invoke the setup lambda to create the `trackedAddresses` and `trackedAddressesPadded` variables on Alchemy:
+## SSM parameters
 
 ```bash
-aws lambda invoke \
-  --function-name <AlchemySetupVariables function name> \
-  --cli-binary-format raw-in-base64-out \
-  --payload '{"trackedAddresses": ["0xYOUR_WALLET_1", "0xYOUR_WALLET_2"]}' \
-  /dev/stdout
+aws ssm put-parameter --name /xstocks/alchemy-auth-token --value "YOUR_TOKEN" --type String
+aws ssm put-parameter --name /xstocks/alchemy-signing-keys --value "key1,key2" --type String
 ```
 
-The lambda automatically creates both:
-- `trackedAddresses` — normal format for transaction/trace filters
-- `trackedAddressesPadded` — zero-padded to 32 bytes for log topic filters
+## Alchemy webhook configuration
 
-> To find the exact function name: `aws lambda list-functions --query "Functions[?contains(FunctionName, 'SetupVariables')].FunctionName"`
+Two webhooks are needed because Alchemy's log topic filters use AND logic across positions — you can't match "from OR to" in a single query.
 
-### 5. Create Webhook 1 — Receives + Native transfers
+- **Webhook 1**: Native transfers (external + internal) + ERC-20 receives (`topics[2]`)
+- **Webhook 2**: ERC-20 sends (`topics[1]`)
 
-Go to [Alchemy Webhooks Dashboard](https://dashboard.alchemy.com/webhooks) → Create Webhook → Custom (GraphQL).
+Both point to the `AlchemyWebhookUrl` output from the deploy. After creating them, update the signing keys SSM parameter with both webhook signing keys (comma-separated).
 
-Paste the Lambda Function URL as the webhook URL, then use this query:
+### Webhook 1 — Receives + Native transfers
 
 ```graphql
 query (
@@ -172,13 +156,7 @@ query (
 }
 ```
 
-This catches:
-- All native token transfers (external + internal) involving your tracked addresses
-- All ERC-20 Transfer events where your tracked address is the **recipient** (`topics[2]`)
-
-### 6. Create Webhook 2 — ERC-20 Sends
-
-Create a second webhook with the same Lambda URL but this query:
+### Webhook 2 — ERC-20 Sends
 
 ```graphql
 query ($trackedAddressesPadded: [Bytes32!]!) {
@@ -210,45 +188,19 @@ query ($trackedAddressesPadded: [Bytes32!]!) {
 }
 ```
 
-This catches all ERC-20 Transfer events where your tracked address is the **sender** (`topics[1]`).
-
-### 7. Update the SSM signing keys
-
-Each webhook gets its own signing key. Store both as a comma-separated value:
+## Local testing
 
 ```bash
-aws ssm put-parameter \
-  --name /xstocks/alchemy-signing-keys \
-  --value "whsec_key_from_webhook_1,whsec_key_from_webhook_2" \
-  --type String \
-  --overwrite
+npx projen test:alchemyWebhookListener
 ```
 
-The Lambda tries each key when validating the signature — if any matches, the request is accepted.
-
-## How the filters work
-
-- **transactions filter** (Webhook 1) — catches direct native token sends where your tracked address is the sender (`from`) or receiver (`to`)
-- **callTracerTraces filter** (Webhook 1) — catches internal native token transfers triggered by smart contracts
-- **logs filter with topics[2]** (Webhook 1) — catches ERC-20 `Transfer` events where your tracked address is the **recipient**
-- **logs filter with topics[1]** (Webhook 2) — catches ERC-20 `Transfer` events where your tracked address is the **sender**
-
-Topics are positional per the `eth_getLogs` spec:
-- `topics[0]` = event signature (Transfer)
-- `topics[1]` = `from` address (sender)
-- `topics[2]` = `to` address (recipient)
-
-Empty arrays `[]` act as wildcards.
-
-## Why two webhooks?
-
-Alchemy's log topic filters use AND logic across positions. Putting `$trackedAddressesPadded` in both `topics[1]` and `topics[2]` would only match transfers **between** your own addresses. To catch "from OR to", we need two separate queries — and since Alchemy doesn't support GraphQL aliases on the `logs` field, that means two webhooks.
+Runs the webhook listener locally with signature verification skipped.
 
 ## Useful commands
 
 | Command | Description |
 |---|---|
-| `npx projen build` | Full build (compile + synth + test + lint) |
+| `npx projen build` | Full build |
 | `npx projen bundle` | Bundle Lambda functions |
 | `npx projen deploy` | Deploy to AWS |
 | `npx projen diff` | Diff against deployed stack |

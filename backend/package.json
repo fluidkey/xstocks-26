@@ -9,6 +9,10 @@
     "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda:watch": "npx projen bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda:watch",
     "bundle:lambda-functions/fetch-prices/fetch-prices.lambda": "npx projen bundle:lambda-functions/fetch-prices/fetch-prices.lambda",
     "bundle:lambda-functions/fetch-prices/fetch-prices.lambda:watch": "npx projen bundle:lambda-functions/fetch-prices/fetch-prices.lambda:watch",
+    "bundle:lambda-functions/get-address-transactions/get-address-transactions.lambda": "npx projen bundle:lambda-functions/get-address-transactions/get-address-transactions.lambda",
+    "bundle:lambda-functions/get-address-transactions/get-address-transactions.lambda:watch": "npx projen bundle:lambda-functions/get-address-transactions/get-address-transactions.lambda:watch",
+    "bundle:lambda-functions/get-user-addresses/get-user-addresses.lambda": "npx projen bundle:lambda-functions/get-user-addresses/get-user-addresses.lambda",
+    "bundle:lambda-functions/get-user-addresses/get-user-addresses.lambda:watch": "npx projen bundle:lambda-functions/get-user-addresses/get-user-addresses.lambda:watch",
     "clobber": "npx projen clobber",
     "compile": "npx projen compile",
     "default": "npx projen default",
@@ -24,6 +28,7 @@
     "synth": "npx projen synth",
     "synth:silent": "npx projen synth:silent",
     "test": "npx projen test",
+    "test:alchemyWebhookListener": "npx projen test:alchemyWebhookListener",
     "test:watch": "npx projen test:watch",
     "upgrade": "npx projen upgrade",
     "watch": "npx projen watch",
@@ -48,10 +53,13 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.1020.0",
     "@aws-sdk/client-s3": "3.1020.0",
     "@aws-sdk/client-ssm": "3.1020.0",
+    "@aws-sdk/lib-dynamodb": "3.1020.0",
     "aws-cdk-lib": "^2.208.0",
     "constructs": "^10.5.1",
+    "lambda-local": "^2.2.0",
     "viem": "^2.47.6"
   },
   "license": "Apache-2.0",

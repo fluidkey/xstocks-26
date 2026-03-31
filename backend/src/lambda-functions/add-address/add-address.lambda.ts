@@ -1,7 +1,10 @@
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { getAddress, isAddress } from 'viem';
 
 const ssm = new SSMClient({});
+const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 const ALCHEMY_API_URL = 'https://dashboard.alchemy.com/api/graphql/variables';
 
@@ -49,12 +52,23 @@ export async function handler(event: {
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
-  if (!request.address || !isAddress(request.address)) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid address' }) };
+  if (!request.idUser || !request.address || !isAddress(request.address)) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid request' }) };
   }
 
   const address = getAddress(request.address);
+  const lowercaseAddress = address.toLowerCase();
   const authToken = await getParam(process.env.ALCHEMY_AUTH_TOKEN_PARAM!);
+
+  // Save to DynamoDB
+  await dynamo.send(new PutCommand({
+    TableName: 'xstocks-user-address',
+    Item: {
+      idUser: request.idUser,
+      address: lowercaseAddress,
+      addedAt: Math.floor(Date.now() / 1000),
+    },
+  }));
 
   // Add checksummed address for transaction/trace filters
   await createVariable(authToken, 'trackedAddresses', [address]);

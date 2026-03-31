@@ -1,14 +1,33 @@
-import { App, aws_apigateway, aws_events, aws_events_targets, aws_logs, aws_s3, CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
+import { App, aws_apigateway, aws_dynamodb, aws_events, aws_events_targets, aws_logs, aws_s3, CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { AddAddressFunction } from './lambda-functions/add-address/add-address-function';
 import { AlchemyWebhookListenerFunction } from './lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener-function';
 import { FetchPricesFunction } from './lambda-functions/fetch-prices/fetch-prices-function';
+import { GetAddressTransactionsFunction } from './lambda-functions/get-address-transactions/get-address-transactions-function';
+import { GetUserAddressesFunction } from './lambda-functions/get-user-addresses/get-user-addresses-function';
 
 export class XStocksBackendStack extends Stack {
   constructor(scope: Construct, id: string, props: StackProps = {}) {
     super(scope, id, props);
+
+    // --- DynamoDB Tables ---
+    const userAddressTable = new aws_dynamodb.Table(this, 'UserAddressTable', {
+      tableName: 'xstocks-user-address',
+      partitionKey: { name: 'idUser', type: aws_dynamodb.AttributeType.STRING },
+      sortKey: { name: 'address', type: aws_dynamodb.AttributeType.STRING },
+      billingMode: aws_dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    const addressTransactionTable = new aws_dynamodb.Table(this, 'AddressTransactionTable', {
+      tableName: 'xstocks-address-transaction',
+      partitionKey: { name: 'address', type: aws_dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: aws_dynamodb.AttributeType.STRING },
+      billingMode: aws_dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
 
     const alchemySigningKeys = ssm.StringParameter.fromStringParameterName(
       this, 'AlchemySigningKeys', '/xstocks/alchemy-signing-keys',
@@ -29,6 +48,7 @@ export class XStocksBackendStack extends Stack {
     });
 
     alchemySigningKeys.grantRead(alchemyWebhookListener);
+    addressTransactionTable.grantWriteData(alchemyWebhookListener);
 
     const fnUrl = alchemyWebhookListener.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,
@@ -59,6 +79,7 @@ export class XStocksBackendStack extends Stack {
     });
 
     alchemyAuthToken.grantRead(addAddress);
+    userAddressTable.grantWriteData(addAddress);
 
     // --- Fetch Prices Lambda (every 10 minutes) ---
     const pricesBucket = new aws_s3.Bucket(this, 'PricesBucket', {
@@ -96,6 +117,24 @@ export class XStocksBackendStack extends Stack {
       description: 'Public URL for prices.json',
     });
 
+    // --- Get User Addresses Lambda ---
+    const getUserAddresses = new GetUserAddressesFunction(this, 'GetUserAddresses', {
+      logGroup: new aws_logs.LogGroup(this, 'GetUserAddressesLogGroup', {
+        removalPolicy: RemovalPolicy.DESTROY,
+        retention: aws_logs.RetentionDays.ONE_WEEK,
+      }),
+    });
+    userAddressTable.grantReadData(getUserAddresses);
+
+    // --- Get Address Transactions Lambda ---
+    const getAddressTransactions = new GetAddressTransactionsFunction(this, 'GetAddressTransactions', {
+      logGroup: new aws_logs.LogGroup(this, 'GetAddressTransactionsLogGroup', {
+        removalPolicy: RemovalPolicy.DESTROY,
+        retention: aws_logs.RetentionDays.ONE_WEEK,
+      }),
+    });
+    addressTransactionTable.grantReadData(getAddressTransactions);
+
     // --- API Gateway ---
     const api = new aws_apigateway.RestApi(this, 'XStocksApi', {
       restApiName: 'xStocks API',
@@ -114,6 +153,27 @@ export class XStocksBackendStack extends Stack {
       allowHeaders: ['Content-Type'],
     });
     addressResource.addMethod('POST', new aws_apigateway.LambdaIntegration(addAddress));
+
+    // GET /user/{id_user}/address
+    const userResource = api.root.addResource('user');
+    const userIdResource = userResource.addResource('{id_user}');
+    const userAddressResource = userIdResource.addResource('address');
+    userAddressResource.addCorsPreflight({
+      allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
+      allowMethods: ['GET', 'OPTIONS'],
+      allowHeaders: ['Content-Type'],
+    });
+    userAddressResource.addMethod('GET', new aws_apigateway.LambdaIntegration(getUserAddresses));
+
+    // GET /address/{address}/transaction
+    const addressByIdResource = addressResource.addResource('{address}');
+    const transactionResource = addressByIdResource.addResource('transaction');
+    transactionResource.addCorsPreflight({
+      allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
+      allowMethods: ['GET', 'OPTIONS'],
+      allowHeaders: ['Content-Type'],
+    });
+    transactionResource.addMethod('GET', new aws_apigateway.LambdaIntegration(getAddressTransactions));
 
     new CfnOutput(this, 'ApiUrl', {
       value: api.url,

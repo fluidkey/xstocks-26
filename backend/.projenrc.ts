@@ -23,7 +23,12 @@ const project = new awscdk.AwsCdkTypeScriptApp({
   deps: [
     '@aws-sdk/client-ssm@3.1020.0',
     '@aws-sdk/client-s3@3.1020.0',
+    '@aws-sdk/client-dynamodb@3.1020.0',
+    '@aws-sdk/lib-dynamodb@3.1020.0',
+    'lambda-local',
     'viem',
+  ],
+  devDeps: [
   ],
   lambdaOptions: {
     runtime: LambdaRuntime.NODEJS_22_X,
@@ -44,5 +49,10 @@ const project = new awscdk.AwsCdkTypeScriptApp({
 project.defaultTask?.exec(
   'chmod -R u+w .projen/ cdk.json .eslintrc.json .gitattributes .gitignore LICENSE .npmignore tsconfig.dev.json tsconfig.json .yarnrc.yml || true',
 );
+
+// Local test task for alchemy-webhook-listener
+project.addTask('test:alchemyWebhookListener', {
+  exec: 'npx ts-node src/lambda-functions/alchemy-webhook-listener/local-development/alchemy-webhook-listener.local-test.ts',
+});
 
 project.synth();

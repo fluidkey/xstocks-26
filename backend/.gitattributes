@@ -21,6 +21,8 @@
 /src/lambda-functions/add-address/add-address-function.ts linguist-generated
 /src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener-function.ts linguist-generated
 /src/lambda-functions/fetch-prices/fetch-prices-function.ts linguist-generated
+/src/lambda-functions/get-address-transactions/get-address-transactions-function.ts linguist-generated
+/src/lambda-functions/get-user-addresses/get-user-addresses-function.ts linguist-generated
 /tsconfig.dev.json linguist-generated linguist-language=JSON-with-Comments
 /tsconfig.json linguist-generated linguist-language=JSON-with-Comments
 /yarn.lock linguist-generated

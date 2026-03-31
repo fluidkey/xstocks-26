@@ -1,7 +1,12 @@
 import { createHmac } from 'crypto';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { hexToBigInt } from 'viem';
+import { AlchemyWebhookEvent } from './types';
 
 const ssm = new SSMClient({});
+const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 let cachedSigningKeys: string[] | undefined;
 
 async function getSigningKeys(): Promise<string[]> {
@@ -22,55 +27,6 @@ function isValidSignature(body: string, signature: string, signingKey: string): 
   return signature === hmac.digest('hex');
 }
 
-interface AlchemyWebhookEvent {
-  webhookId: string;
-  id: string;
-  createdAt: string;
-  type: string;
-  event: {
-    data: {
-      block: {
-        hash: string;
-        number: number;
-        timestamp: string;
-        transactions?: Transaction[];
-        callTracerTraces?: Trace[];
-        logs?: Log[];
-      };
-    };
-    sequenceNumber: string;
-  };
-}
-
-interface Transaction {
-  hash: string;
-  from: { address: string };
-  to: { address: string };
-  value: string;
-  gas: number;
-  status: number;
-}
-
-interface Trace {
-  from: { address: string };
-  to: { address: string };
-  value: string;
-  type: string;
-}
-
-interface Log {
-  topics: string[];
-  data: string;
-  account: { address: string };
-  transaction: {
-    hash: string;
-    from: { address: string };
-    to: { address: string };
-    value: string;
-    status: number;
-  };
-}
-
 export async function handler(event: {
   headers: Record<string, string | undefined>;
   body?: string;
@@ -83,19 +39,21 @@ export async function handler(event: {
   console.log('Raw event received:', rawBody);
 
   // Validate signature against any of the stored signing keys
-  let signingKeys: string[];
-  try {
-    signingKeys = await getSigningKeys();
-  } catch (err) {
-    console.error('Failed to retrieve signing keys:', err);
-    return { statusCode: 500, body: 'Server misconfigured' };
-  }
+  if (process.env.SKIP_SIGNATURE_VERIFICATION !== 'true') {
+    let signingKeys: string[];
+    try {
+      signingKeys = await getSigningKeys();
+    } catch (err) {
+      console.error('Failed to retrieve signing keys:', err);
+      return { statusCode: 500, body: 'Server misconfigured' };
+    }
 
-  const signature = event.headers['x-alchemy-signature'] ?? event.headers['X-Alchemy-Signature'] ?? '';
-  const isValid = signingKeys.some(key => isValidSignature(rawBody, signature, key));
-  if (!isValid) {
-    console.warn('Invalid signature');
-    return { statusCode: 401, body: 'Unauthorized' };
+    const signature = event.headers['x-alchemy-signature'] ?? event.headers['X-Alchemy-Signature'] ?? '';
+    const isValid = signingKeys.some(key => isValidSignature(rawBody, signature, key));
+    if (!isValid) {
+      console.warn('Invalid signature');
+      return { statusCode: 401, body: 'Unauthorized' };
+    }
   }
 
   let webhookEvent: AlchemyWebhookEvent;
@@ -112,47 +70,149 @@ export async function handler(event: {
     return { statusCode: 200, body: 'OK - no block data' };
   }
 
+  const blockTimestamp = Math.floor(new Date(block.timestamp).getTime() / 1000);
+  const tableName = 'xstocks-address-transaction';
+
+  async function writeTx(params: {
+    trackedAddress: string;
+    blockNumber: number;
+    txHash: string;
+    logIndex: string;
+    from: string;
+    to: string;
+    amount: string;
+    tokenContract: string;
+    type: string;
+    direction: string;
+  }) {
+    await dynamo.send(new PutCommand({
+      TableName: tableName,
+      Item: {
+        address: params.trackedAddress.toLowerCase(),
+        sk: `${params.blockNumber}#${params.txHash}#${params.logIndex}`,
+        txHash: params.txHash,
+        blockNumber: params.blockNumber,
+        timestamp: blockTimestamp,
+        from: params.from.toLowerCase(),
+        to: params.to.toLowerCase(),
+        amount: params.amount,
+        tokenContract: params.tokenContract.toLowerCase(),
+        type: params.type,
+        direction: params.direction,
+      },
+    }));
+  }
+
+  const writes: Promise<void>[] = [];
+
   // --- Native token transfers (external) ---
   if (block.transactions?.length) {
     for (const tx of block.transactions) {
-      console.log(JSON.stringify({
+      const from = tx.from.address.toLowerCase();
+      const to = tx.to.address.toLowerCase();
+      const amount = hexToBigInt(tx.value as `0x${string}`).toString();
+      // Write one record per tracked address side
+      writes.push(writeTx({
+        trackedAddress: from,
+        blockNumber: block.number,
+        txHash: tx.hash,
+        logIndex: '0',
+        from,
+        to,
+        amount,
+        tokenContract: '',
         type: 'NATIVE_EXTERNAL',
-        hash: tx.hash,
-        from: tx.from.address,
-        to: tx.to.address,
-        value: tx.value,
-        status: tx.status,
+        direction: 'OUT',
+      }));
+      writes.push(writeTx({
+        trackedAddress: to,
+        blockNumber: block.number,
+        txHash: tx.hash,
+        logIndex: '0',
+        from,
+        to,
+        amount,
+        tokenContract: '',
+        type: 'NATIVE_EXTERNAL',
+        direction: 'IN',
       }));
     }
   }
 
   // --- Native token transfers (internal / contract calls) ---
   if (block.callTracerTraces?.length) {
-    for (const trace of block.callTracerTraces) {
-      console.log(JSON.stringify({
+    for (let i = 0; i < block.callTracerTraces.length; i++) {
+      const trace = block.callTracerTraces[i];
+      const from = trace.from.address.toLowerCase();
+      const to = trace.to.address.toLowerCase();
+      const amount = hexToBigInt(trace.value as `0x${string}`).toString();
+      writes.push(writeTx({
+        trackedAddress: from,
+        blockNumber: block.number,
+        txHash: `trace-${block.hash}`,
+        logIndex: String(i),
+        from,
+        to,
+        amount,
+        tokenContract: '',
         type: 'NATIVE_INTERNAL',
-        from: trace.from.address,
-        to: trace.to.address,
-        value: trace.value,
-        traceType: trace.type,
+        direction: 'OUT',
+      }));
+      writes.push(writeTx({
+        trackedAddress: to,
+        blockNumber: block.number,
+        txHash: `trace-${block.hash}`,
+        logIndex: String(i),
+        from,
+        to,
+        amount,
+        tokenContract: '',
+        type: 'NATIVE_INTERNAL',
+        direction: 'IN',
       }));
     }
   }
 
   // --- ERC-20 transfers ---
   if (block.logs?.length) {
-    for (const log of block.logs) {
-      console.log(JSON.stringify({
-        type: 'ERC20_TRANSFER',
-        tokenContract: log.account.address,
+    for (let i = 0; i < block.logs.length; i++) {
+      const log = block.logs[i];
+      const from = log.transaction.from.address.toLowerCase();
+      const to = log.transaction.to.address.toLowerCase();
+      const tokenContract = log.account.address.toLowerCase();
+      const amount = hexToBigInt(log.data as `0x${string}`).toString();
+      // Decode from/to from topics if available (ERC-20 Transfer event)
+      const topicFrom = log.topics[1] ? ('0x' + log.topics[1].slice(26)).toLowerCase() : from;
+      const topicTo = log.topics[2] ? ('0x' + log.topics[2].slice(26)).toLowerCase() : to;
+      writes.push(writeTx({
+        trackedAddress: topicFrom,
+        blockNumber: block.number,
         txHash: log.transaction.hash,
-        from: log.transaction.from.address,
-        to: log.transaction.to.address,
-        topics: log.topics,
-        data: log.data,
+        logIndex: String(i),
+        from: topicFrom,
+        to: topicTo,
+        amount,
+        tokenContract,
+        type: 'ERC20_TRANSFER',
+        direction: 'OUT',
+      }));
+      writes.push(writeTx({
+        trackedAddress: topicTo,
+        blockNumber: block.number,
+        txHash: log.transaction.hash,
+        logIndex: String(i),
+        from: topicFrom,
+        to: topicTo,
+        amount,
+        tokenContract,
+        type: 'ERC20_TRANSFER',
+        direction: 'IN',
       }));
     }
   }
+
+  await Promise.all(writes);
+  console.log(`Wrote ${writes.length} transaction records`);
 
   return { statusCode: 200, body: 'OK' };
 }

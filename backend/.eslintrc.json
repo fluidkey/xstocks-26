@@ -156,6 +156,8 @@
           "src/lambda-functions/add-address/add-address.lambda.ts",
           "src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda.ts",
           "src/lambda-functions/fetch-prices/fetch-prices.lambda.ts",
+          "src/lambda-functions/get-address-transactions/get-address-transactions.lambda.ts",
+          "src/lambda-functions/get-user-addresses/get-user-addresses.lambda.ts",
           ".projenrc.ts",
           "projenrc/**/*.ts"
         ],
