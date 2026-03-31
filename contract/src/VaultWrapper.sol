@@ -44,6 +44,9 @@ contract VaultWrapper is ERC20 {
     /// @notice Thrown when a redeem or withdraw exceeds the owner's share balance.
     error InsufficientBalance();
 
+    /// @notice Thrown when msg.sender is not the share owner on redeem/withdraw.
+    error NotShareOwner();
+
     // ──────────────────────────────────────────────────────────────
     // Events
     // ──────────────────────────────────────────────────────────────
@@ -459,7 +462,7 @@ contract VaultWrapper is ERC20 {
     /// @param receiver     Address that receives the minted wrapper shares.
     /// @param feeCollector Address that accrues fees for this position.
     /// @return shares      Number of wrapper shares minted.
-    function deposit(
+    function deposit(   
         uint256 assets,
         address receiver,
         address feeCollector
@@ -509,6 +512,8 @@ contract VaultWrapper is ERC20 {
         address receiver,
         address owner
     ) external returns (uint256 assets) {
+        // Approvals are disabled so only the owner can redeem their own shares
+        if (msg.sender != owner) revert NotShareOwner();
         if (shares == 0) revert ZeroShares();
         if (balanceOf(owner) < shares) revert InsufficientBalance();
 
@@ -540,6 +545,8 @@ contract VaultWrapper is ERC20 {
         address receiver,
         address owner
     ) external returns (uint256 shares) {
+        // Approvals are disabled so only the owner can withdraw their own shares
+        if (msg.sender != owner) revert NotShareOwner();
         if (assets == 0) revert ZeroAssets();
 
         // Round up shares so the owner burns enough for the exact asset withdrawal
