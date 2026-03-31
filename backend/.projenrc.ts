@@ -1,7 +1,8 @@
 import { awscdk, javascript } from 'projen';
+import { LambdaRuntime } from 'projen/lib/awscdk';
 
 const project = new awscdk.AwsCdkTypeScriptApp({
-  cdkVersion: '2.189.1',
+  cdkVersion: '2.208.0',
   defaultReleaseBranch: 'main',
   github: false,
   name: 'xStocks2026',
@@ -19,6 +20,22 @@ const project = new awscdk.AwsCdkTypeScriptApp({
     },
   },
   eslint: true,
+  deps: [
+    '@aws-sdk/client-ssm@3.1020.0',
+  ],
+  lambdaOptions: {
+    runtime: LambdaRuntime.NODEJS_22_X,
+  },
+  tsconfig: {
+    compilerOptions: {
+      types: ['node'],
+    },
+  },
+  tsconfigDev: {
+    compilerOptions: {
+      types: ['node'],
+    },
+  },
 });
 
 // Fix file permissions after projen synth (so GitKraken can merge without permission errors)

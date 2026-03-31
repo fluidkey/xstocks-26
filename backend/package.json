@@ -3,6 +3,10 @@
   "scripts": {
     "build": "npx projen build",
     "bundle": "npx projen bundle",
+    "bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda": "npx projen bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda",
+    "bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda:watch": "npx projen bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda:watch",
+    "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda": "npx projen bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda",
+    "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda:watch": "npx projen bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda:watch",
     "clobber": "npx projen clobber",
     "compile": "npx projen compile",
     "default": "npx projen default",
@@ -42,7 +46,8 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.189.1",
+    "@aws-sdk/client-ssm": "3.1020.0",
+    "aws-cdk-lib": "^2.208.0",
     "constructs": "^10.5.1"
   },
   "license": "Apache-2.0",

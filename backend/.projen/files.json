@@ -10,6 +10,8 @@
     ".yarnrc.yml",
     "cdk.json",
     "LICENSE",
+    "src/lambda-functions/alchemy-setup-variables/alchemy-setup-variables-function.ts",
+    "src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener-function.ts",
     "tsconfig.dev.json",
     "tsconfig.json"
   ],
