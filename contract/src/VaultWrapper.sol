@@ -440,8 +440,12 @@ contract VaultWrapper is ERC20 {
         }
 
         state.lastAccrualTimestamp = block.timestamp;
-        // Keep global timestamp in sync so effectiveTotalSupply stays accurate
-        globalLastAccrualTimestamp = block.timestamp;
+        // Only advance the global timestamp when this collector has real AUM.
+        // This prevents griefing via collectFees(randomAddress) which would
+        // otherwise reset the global clock and undercount pending fees.
+        if (state.totalAUM > 0) {
+            globalLastAccrualTimestamp = block.timestamp;
+        }
     }
 
     /// @dev Shared deposit logic — settles the receiver's fee collector, updates
@@ -460,6 +464,10 @@ contract VaultWrapper is ERC20 {
 
         _settleFeeCollector(feeCollector);
         feeCollectorStates[feeCollector].totalAUM += assets;
+
+        // Ensure global timestamp is set after AUM increases (covers first
+        // deposit where _settleFeeCollector skipped the update due to AUM == 0)
+        globalLastAccrualTimestamp = block.timestamp;
 
         // Pull assets from caller, approve underlying vault, and deposit
         asset.safeTransferFrom(msg.sender, address(this), assets);

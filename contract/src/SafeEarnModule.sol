@@ -257,6 +257,7 @@ contract SafeEarnModule is Ownable {
     /// @param newRoot The new merkle root. Must not be zero.
     function changeMerkleRoot(bytes32 newRoot) external {
         if (newRoot == bytes32(0)) revert InvalidMerkleRoot();
+        if (safeConfigs[msg.sender].rootHash == bytes32(0)) revert ModuleNotInitialized(msg.sender);
 
         bytes32 oldRoot = safeConfigs[msg.sender].rootHash;
         safeConfigs[msg.sender].rootHash = newRoot;
