@@ -22,6 +22,7 @@ const project = new awscdk.AwsCdkTypeScriptApp({
   eslint: true,
   deps: [
     '@aws-sdk/client-ssm@3.1020.0',
+    'viem',
   ],
   lambdaOptions: {
     runtime: LambdaRuntime.NODEJS_22_X,

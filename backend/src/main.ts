@@ -62,9 +62,20 @@ export class XStocksBackendStack extends Stack {
     // --- API Gateway ---
     const api = new aws_apigateway.RestApi(this, 'XStocksApi', {
       restApiName: 'xStocks API',
+      endpointConfiguration: {
+        types: [aws_apigateway.EndpointType.EDGE],
+      },
+      deployOptions: {
+        stageName: 'v1',
+      },
     });
 
     const addressResource = api.root.addResource('address');
+    addressResource.addCorsPreflight({
+      allowOrigins: aws_apigateway.Cors.ALL_ORIGINS,
+      allowMethods: ['POST', 'OPTIONS'],
+      allowHeaders: ['Content-Type'],
+    });
     addressResource.addMethod('POST', new aws_apigateway.LambdaIntegration(addAddress));
 
     new CfnOutput(this, 'ApiUrl', {

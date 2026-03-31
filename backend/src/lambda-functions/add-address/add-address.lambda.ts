@@ -1,4 +1,5 @@
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { getAddress, isAddress } from 'viem';
 
 const ssm = new SSMClient({});
 
@@ -48,24 +49,25 @@ export async function handler(event: {
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
-  if (!request.address?.startsWith('0x')) {
+  if (!request.address || !isAddress(request.address)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid address' }) };
   }
 
+  const address = getAddress(request.address);
   const authToken = await getParam(process.env.ALCHEMY_AUTH_TOKEN_PARAM!);
 
-  // Add normal address for transaction/trace filters
-  await createVariable(authToken, 'trackedAddresses', [request.address]);
+  // Add checksummed address for transaction/trace filters
+  await createVariable(authToken, 'trackedAddresses', [address]);
 
   // Add zero-padded address for log topic filters
-  const padded = '0x' + request.address.slice(2).toLowerCase().padStart(64, '0');
+  const padded = '0x' + address.slice(2).toLowerCase().padStart(64, '0');
   await createVariable(authToken, 'trackedAddressesPadded', [padded]);
 
   return {
     statusCode: 200,
     body: JSON.stringify({
       message: 'Address added',
-      address: request.address,
+      address,
     }),
   };
 }

@@ -48,7 +48,8 @@
   "dependencies": {
     "@aws-sdk/client-ssm": "3.1020.0",
     "aws-cdk-lib": "^2.208.0",
-    "constructs": "^10.5.1"
+    "constructs": "^10.5.1",
+    "viem": "^2.47.6"
   },
   "license": "Apache-2.0",
   "publishConfig": {

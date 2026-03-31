@@ -80,6 +80,8 @@ export async function handler(event: {
     ? Buffer.from(event.body ?? '', 'base64').toString('utf8')
     : event.body ?? '';
 
+  console.log('Raw event received:', rawBody);
+
   // Validate signature against any of the stored signing keys
   let signingKeys: string[];
   try {
