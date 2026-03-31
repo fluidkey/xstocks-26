@@ -10,10 +10,9 @@ import {VaultWrapperFactory} from "./VaultWrapperFactory.sol";
 import {VaultWrapper} from "./VaultWrapper.sol";
 import {ISafe} from "./ISafe.sol";
 
-/// @notice Minimal WETH interface for wrapping/unwrapping native ETH.
+/// @notice Minimal WETH interface for wrapping native ETH.
 interface IWETH {
     function deposit() external payable;
-    function withdraw(uint256) external;
 }
 
 /// @title SafeEarnModule
@@ -29,8 +28,7 @@ contract SafeEarnModule is Ownable {
     // ──────────────────────────────────────────────────────────────
 
     /// @notice Sentinel address representing native ETH in deposit/withdraw calls.
-    /// @dev When token == NATIVE_TOKEN the module wraps ETH → WETH before deposit
-    ///      and unwraps WETH → ETH after withdrawal.
+    /// @dev When token == NATIVE_TOKEN the module wraps ETH → WETH before deposit.
     address public constant NATIVE_TOKEN =
         0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
@@ -108,9 +106,6 @@ contract SafeEarnModule is Ownable {
 
     /// @notice Thrown when wrapping native ETH to WETH via the Safe fails.
     error NativeWrapFailed();
-
-    /// @notice Thrown when unwrapping WETH to native ETH via the Safe fails.
-    error NativeUnwrapFailed();
 
     /// @notice Thrown when the ERC-20 approval via the Safe fails.
     error ApprovalFailed();
@@ -427,23 +422,6 @@ contract SafeEarnModule is Ownable {
         }
     }
 
-    /// @dev If the token is native ETH, unwrap the Safe's WETH balance back to ETH.
-    /// @param token The token address (checked against NATIVE_TOKEN sentinel).
-    /// @param safe  The Safe that executes the WETH.withdraw() call.
-    function _unwrapNativeIfNeeded(address token, address safe) internal {
-        if (token == NATIVE_TOKEN) {
-            uint256 wethBalance = IERC20(wrappedNative).balanceOf(safe);
-            if (wethBalance > 0) {
-                bytes memory unwrapData = abi.encodeWithSelector(
-                    IWETH.withdraw.selector, wethBalance
-                );
-                if (!ISafe(safe).execTransactionFromModule(wrappedNative, 0, unwrapData, 0)) {
-                    revert NativeUnwrapFailed();
-                }
-            }
-        }
-    }
-
     // ──────────────────────────────────────────────────────────────
     // Core Operations
     // ──────────────────────────────────────────────────────────────
@@ -486,8 +464,9 @@ contract SafeEarnModule is Ownable {
     }
 
     /// @notice Execute a relayer-signed withdrawal from a VaultWrapper on behalf of a Safe.
-    /// @dev Verifies the ECDSA signature, validates the merkle proof, redeems
-    ///      wrapper shares back to the Safe, and unwraps WETH if native ETH.
+    /// @dev Verifies the ECDSA signature, validates the merkle proof, and redeems
+    ///      wrapper shares back to the Safe. For native ETH vaults the Safe receives
+    ///      WETH — the owner can unwrap it independently if needed.
     /// @param token          The asset token (use NATIVE_TOKEN for ETH).
     /// @param shares         Number of wrapper shares to redeem.
     /// @param underlyingVault The target ERC-4626 vault.
@@ -527,8 +506,6 @@ contract SafeEarnModule is Ownable {
         if (!ISafe(safe).execTransactionFromModule(wrapper, 0, redeemData, 0)) {
             revert RedeemFailed();
         }
-
-        _unwrapNativeIfNeeded(token, safe);
 
         emit AutoWithdrawExecuted(safe, token, underlyingVault, shares, assets);
     }
