@@ -293,8 +293,9 @@ contract SafeEarnModule is Ownable {
         address safe,
         uint256 nonce
     ) internal view returns (bytes32) {
+        // Include "deposit" action tag to prevent cross-action replay
         return keccak256(abi.encode(
-            block.chainid, token, amount,
+            "deposit", block.chainid, token, amount,
             underlyingVault, feePercentage, safe, nonce
         ));
     }
@@ -316,8 +317,9 @@ contract SafeEarnModule is Ownable {
         address safe,
         uint256 nonce
     ) internal view returns (bytes32) {
+        // Include "withdraw" action tag to prevent cross-action replay
         return keccak256(abi.encode(
-            block.chainid, token, shares,
+            "withdraw", block.chainid, token, shares,
             underlyingVault, feePercentage, safe, nonce
         ));
     }
