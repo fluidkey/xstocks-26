@@ -29,28 +29,28 @@
       "description": "Prepare assets",
       "steps": [
         {
-          "spawn": "bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda"
+          "spawn": "bundle:lambda-functions/add-address/add-address.lambda"
         },
         {
           "spawn": "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda"
         }
       ]
     },
-    "bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda": {
-      "name": "bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda",
-      "description": "Create a JavaScript bundle from src/lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda.ts",
+    "bundle:lambda-functions/add-address/add-address.lambda": {
+      "name": "bundle:lambda-functions/add-address/add-address.lambda",
+      "description": "Create a JavaScript bundle from src/lambda-functions/add-address/add-address.lambda.ts",
       "steps": [
         {
-          "exec": "esbuild --bundle src/lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
+          "exec": "esbuild --bundle src/lambda-functions/add-address/add-address.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/add-address/add-address.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
         }
       ]
     },
-    "bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda:watch": {
-      "name": "bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda:watch",
-      "description": "Continuously update the JavaScript bundle from src/lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda.ts",
+    "bundle:lambda-functions/add-address/add-address.lambda:watch": {
+      "name": "bundle:lambda-functions/add-address/add-address.lambda:watch",
+      "description": "Continuously update the JavaScript bundle from src/lambda-functions/add-address/add-address.lambda.ts",
       "steps": [
         {
-          "exec": "esbuild --bundle src/lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
+          "exec": "esbuild --bundle src/lambda-functions/add-address/add-address.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/add-address/add-address.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
         }
       ]
     },

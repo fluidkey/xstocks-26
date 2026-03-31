@@ -3,8 +3,8 @@
   "scripts": {
     "build": "npx projen build",
     "bundle": "npx projen bundle",
-    "bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda": "npx projen bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda",
-    "bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda:watch": "npx projen bundle:lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda:watch",
+    "bundle:lambda-functions/add-address/add-address.lambda": "npx projen bundle:lambda-functions/add-address/add-address.lambda",
+    "bundle:lambda-functions/add-address/add-address.lambda:watch": "npx projen bundle:lambda-functions/add-address/add-address.lambda:watch",
     "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda": "npx projen bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda",
     "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda:watch": "npx projen bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda:watch",
     "clobber": "npx projen clobber",

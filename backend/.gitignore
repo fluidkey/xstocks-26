@@ -52,6 +52,6 @@ junit.xml
 /cdk.out/
 .cdk.staging/
 .parcel-cache/
-!/src/lambda-functions/alchemy-setup-variables/alchemy-setup-variables-function.ts
+!/src/lambda-functions/add-address/add-address-function.ts
 !/src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener-function.ts
 !/.projenrc.ts

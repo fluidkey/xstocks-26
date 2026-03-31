@@ -13,8 +13,6 @@ async function getParam(name: string): Promise<string> {
 
 async function createVariable(authToken: string, variableName: string, items: string[]) {
   const url = `${ALCHEMY_API_URL}/${variableName}`;
-  console.log(`Creating variable ${variableName} with ${items.length} items`);
-
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -28,32 +26,46 @@ async function createVariable(authToken: string, variableName: string, items: st
     const body = await res.text();
     throw new Error(`Failed to create ${variableName}: ${res.status} ${body}`);
   }
+}
 
-  console.log(`Variable ${variableName} created successfully`);
+interface AddAddressRequest {
+  idUser: string;
+  address: string;
 }
 
 export async function handler(event: {
-  trackedAddresses: string[];
+  body?: string;
+  isBase64Encoded?: boolean;
 }) {
+  const rawBody = event.isBase64Encoded
+    ? Buffer.from(event.body ?? '', 'base64').toString('utf8')
+    : event.body ?? '';
+
+  let request: AddAddressRequest;
+  try {
+    request = JSON.parse(rawBody);
+  } catch {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON' }) };
+  }
+
+  if (!request.address?.startsWith('0x')) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid address' }) };
+  }
+
   const authToken = await getParam(process.env.ALCHEMY_AUTH_TOKEN_PARAM!);
 
-  const { trackedAddresses } = event;
+  // Add normal address for transaction/trace filters
+  await createVariable(authToken, 'trackedAddresses', [request.address]);
 
-  if (!trackedAddresses?.length) throw new Error('trackedAddresses is required');
-
-  // Zero-pad addresses to 32 bytes for log topic filtering
-  const trackedAddressesPadded = trackedAddresses.map(
-    addr => '0x' + addr.slice(2).toLowerCase().padStart(64, '0'),
-  );
-
-  await createVariable(authToken, 'trackedAddresses', trackedAddresses);
-  await createVariable(authToken, 'trackedAddressesPadded', trackedAddressesPadded);
+  // Add zero-padded address for log topic filters
+  const padded = '0x' + request.address.slice(2).toLowerCase().padStart(64, '0');
+  await createVariable(authToken, 'trackedAddressesPadded', [padded]);
 
   return {
     statusCode: 200,
     body: JSON.stringify({
-      message: 'Variables created',
-      trackedAddresses: trackedAddresses.length,
+      message: 'Address added',
+      address: request.address,
     }),
   };
 }

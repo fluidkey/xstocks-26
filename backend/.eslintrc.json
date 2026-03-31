@@ -153,7 +153,7 @@
         "devDependencies": [
           "**/test/**",
           "**/build-tools/**",
-          "src/lambda-functions/alchemy-setup-variables/alchemy-setup-variables.lambda.ts",
+          "src/lambda-functions/add-address/add-address.lambda.ts",
           "src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda.ts",
           ".projenrc.ts",
           "projenrc/**/*.ts"
