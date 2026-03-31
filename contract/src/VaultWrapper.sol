@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ERC20} from "@openzeppelin/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC4626} from "@openzeppelin/interfaces/IERC4626.sol";
 import {Math} from "@openzeppelin/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
@@ -114,6 +115,16 @@ contract VaultWrapper is ERC20 {
     /// @notice Annual fee in basis points (1 = 0.01%, 100 = 1%, 5000 = 50%).
     uint256 public immutable feePercentage;
 
+    /// @dev Virtual offset added to effectiveTotalSupply in share conversion
+    ///      math to prevent the ERC-4626 inflation / donation attack.
+    ///      Derived from the underlying asset's decimals: 10 ** decimals.
+    ///      Uses the same asymmetric pattern as OpenZeppelin ERC4626 — large
+    ///      offset on supply, +1 on assets — so convertToAssets can never
+    ///      exceed real totalAssets. The attacker must donate OFFSET x the
+    ///      victim's deposit to steal meaningful value, which for an 18-decimal
+    ///      token means donating 1e18 units (~1 full token) to steal 1 wei.
+    uint256 private immutable _VIRTUAL_SHARE_OFFSET;
+
     // ──────────────────────────────────────────────────────────────
     // Storage
     // ──────────────────────────────────────────────────────────────
@@ -155,6 +166,11 @@ contract VaultWrapper is ERC20 {
         underlying = IERC4626(_underlying);
         asset = IERC20(IERC4626(_underlying).asset());
         feePercentage = _feePercentage;
+
+        // Derive virtual share offset from asset decimals so the inflation
+        // attack protection scales with the token's precision.
+        uint8 assetDecimals = IERC20Metadata(IERC4626(_underlying).asset()).decimals();
+        _VIRTUAL_SHARE_OFFSET = 10 ** uint256(assetDecimals);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -254,21 +270,31 @@ contract VaultWrapper is ERC20 {
     }
 
     /// @notice Convert an asset amount to wrapper shares using the effective total supply.
+    /// @dev Includes a virtual offset to both supply and assets to prevent
+    ///      the ERC-4626 inflation / donation attack.
     /// @param assets The amount of assets to convert.
     /// @return The equivalent number of wrapper shares (rounded down).
     function convertToShares(uint256 assets) public view returns (uint256) {
-        uint256 supply = effectiveTotalSupply();
-        if (supply == 0) return assets;
-        return Math.mulDiv(assets, supply, totalAssets(), Math.Rounding.Floor);
+        return Math.mulDiv(
+            assets,
+            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+            totalAssets() + 1,
+            Math.Rounding.Floor
+        );
     }
 
     /// @notice Convert a share amount to assets using the effective total supply.
+    /// @dev Includes a virtual offset to both supply and assets to prevent
+    ///      the ERC-4626 inflation / donation attack.
     /// @param shares The number of shares to convert.
     /// @return The equivalent amount of assets (rounded down).
     function convertToAssets(uint256 shares) public view returns (uint256) {
-        uint256 supply = effectiveTotalSupply();
-        if (supply == 0) return shares;
-        return Math.mulDiv(shares, totalAssets(), supply, Math.Rounding.Floor);
+        return Math.mulDiv(
+            shares,
+            totalAssets() + 1,
+            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+            Math.Rounding.Floor
+        );
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -287,9 +313,12 @@ contract VaultWrapper is ERC20 {
     /// @param shares The number of shares to mint.
     /// @return The number of assets required.
     function previewMint(uint256 shares) external view returns (uint256) {
-        uint256 supply = effectiveTotalSupply();
-        if (supply == 0) return shares;
-        return Math.mulDiv(shares, totalAssets(), supply, Math.Rounding.Ceil);
+        return Math.mulDiv(
+            shares,
+            totalAssets() + 1,
+            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+            Math.Rounding.Ceil
+        );
     }
 
     /// @notice Preview the number of shares that must be burned to withdraw exact assets.
@@ -297,9 +326,12 @@ contract VaultWrapper is ERC20 {
     /// @param assets The amount of assets to withdraw.
     /// @return The number of shares that would be burned.
     function previewWithdraw(uint256 assets) external view returns (uint256) {
-        uint256 supply = effectiveTotalSupply();
-        if (supply == 0) return assets;
-        return Math.mulDiv(assets, supply, totalAssets(), Math.Rounding.Ceil);
+        return Math.mulDiv(
+            assets,
+            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+            totalAssets() + 1,
+            Math.Rounding.Ceil
+        );
     }
 
     /// @notice Preview the number of assets returned for redeeming a given number of shares.
@@ -509,12 +541,12 @@ contract VaultWrapper is ERC20 {
         if (shares == 0) revert ZeroShares();
 
         // Round up so the caller pays enough assets for the requested shares
-        uint256 supply = effectiveTotalSupply();
-        if (supply == 0) {
-            assets = shares;
-        } else {
-            assets = Math.mulDiv(shares, totalAssets(), supply, Math.Rounding.Ceil);
-        }
+        assets = Math.mulDiv(
+            shares,
+            totalAssets() + 1,
+            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+            Math.Rounding.Ceil
+        );
         if (assets == 0) revert ZeroAssets();
 
         _deposit(assets, shares, receiver);
@@ -568,12 +600,12 @@ contract VaultWrapper is ERC20 {
         if (assets == 0) revert ZeroAssets();
 
         // Round up shares so the owner burns enough for the exact asset withdrawal
-        uint256 supply = effectiveTotalSupply();
-        if (supply == 0) {
-            shares = assets;
-        } else {
-            shares = Math.mulDiv(assets, supply, totalAssets(), Math.Rounding.Ceil);
-        }
+        shares = Math.mulDiv(
+            assets,
+            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+            totalAssets() + 1,
+            Math.Rounding.Ceil
+        );
         if (shares == 0) revert ZeroShares();
         if (balanceOf(owner) < shares) revert InsufficientBalance();
 
