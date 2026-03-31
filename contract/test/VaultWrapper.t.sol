@@ -29,10 +29,8 @@ contract VaultWrapperHarness is VaultWrapper {
             lastAccrualTimestamp: timestamp,
             settledVirtualShares: settled
         });
-        if (!_isFeeCollectorActive[fc]) {
-            _isFeeCollectorActive[fc] = true;
-            _activeFeeCollectors.push(fc);
-        }
+        // Keep global timestamp in sync for effectiveTotalSupply
+        globalLastAccrualTimestamp = timestamp;
     }
 
     function exposed_mint(address to, uint256 amount) external {
