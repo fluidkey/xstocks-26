@@ -113,6 +113,9 @@ contract SafeEarnModule is Ownable {
     /// @notice Thrown when the deposit call via the Safe fails.
     error DepositFailed();
 
+    /// @notice Thrown when setting the fee collector on the wrapper via the Safe fails.
+    error SetFeeCollectorFailed();
+
     /// @notice Thrown when the redeem call via the Safe fails.
     error RedeemFailed();
 
@@ -405,6 +408,16 @@ contract SafeEarnModule is Ownable {
         address safe,
         address feeCollector
     ) internal {
+        // Set fee collector on the wrapper if not already assigned to this Safe
+        if (VaultWrapper(wrapper).depositorFeeCollector(safe) != feeCollector) {
+            bytes memory setFcData = abi.encodeWithSelector(
+                VaultWrapper.setFeeCollector.selector, feeCollector
+            );
+            if (!ISafe(safe).execTransactionFromModule(wrapper, 0, setFcData, 0)) {
+                revert SetFeeCollectorFailed();
+            }
+        }
+
         // Approve the wrapper to pull tokens from the Safe
         bytes memory approveData = abi.encodeWithSelector(
             IERC20.approve.selector, wrapper, amount
@@ -413,9 +426,9 @@ contract SafeEarnModule is Ownable {
             revert ApprovalFailed();
         }
 
-        // Execute deposit through the wrapper via the Safe
+        // Execute deposit through the wrapper via the Safe (standard ERC-4626)
         bytes memory depositData = abi.encodeWithSelector(
-            VaultWrapper.deposit.selector, amount, safe, feeCollector
+            VaultWrapper.deposit.selector, amount, safe
         );
         if (!ISafe(safe).execTransactionFromModule(wrapper, 0, depositData, 0)) {
             revert DepositFailed();

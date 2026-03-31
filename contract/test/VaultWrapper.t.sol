@@ -297,10 +297,13 @@ contract VaultWrapperDepositWithdrawTest is Test {
         vm.startPrank(DEPOSITOR);
         asset.approve(address(wrapper), assets);
 
+        // Set fee collector before first deposit
+        wrapper.setFeeCollector(FEE_COLLECTOR);
+
         // Snapshot expected shares BEFORE deposit
         uint256 expectedShares = wrapper.convertToShares(assets);
 
-        wrapper.deposit(assets, DEPOSITOR, FEE_COLLECTOR);
+        wrapper.deposit(assets, DEPOSITOR);
         vm.stopPrank();
 
         assertEq(
@@ -326,7 +329,8 @@ contract VaultWrapperDepositWithdrawTest is Test {
         asset.mint(DEPOSITOR, depositAmount + 1e18);
         vm.startPrank(DEPOSITOR);
         asset.approve(address(wrapper), depositAmount + 1e18);
-        wrapper.deposit(depositAmount, DEPOSITOR, FEE_COLLECTOR);
+        wrapper.setFeeCollector(FEE_COLLECTOR);
+        wrapper.deposit(depositAmount, DEPOSITOR);
         vm.stopPrank();
 
         // Warp forward so virtual fees accrue
@@ -337,7 +341,7 @@ contract VaultWrapperDepositWithdrawTest is Test {
 
         // Second deposit triggers settlement
         vm.startPrank(DEPOSITOR);
-        wrapper.deposit(1e18, DEPOSITOR, FEE_COLLECTOR);
+        wrapper.deposit(1e18, DEPOSITOR);
         vm.stopPrank();
 
         (, uint256 settledAfter, uint256 pendingAfter,) =
@@ -380,7 +384,8 @@ contract VaultWrapperDepositWithdrawTest is Test {
         asset.approve(address(wrapper), totalNeeded);
 
         // --- Scenario 1: New depositor with FC1 ---
-        wrapper.deposit(deposit1, DEPOSITOR, FC1);
+        wrapper.setFeeCollector(FC1);
+        wrapper.deposit(deposit1, DEPOSITOR);
 
         assertEq(
             wrapper.depositorFeeCollector(DEPOSITOR),
@@ -391,7 +396,7 @@ contract VaultWrapperDepositWithdrawTest is Test {
         assertEq(aumFC1_1, deposit1, "FC1 AUM must equal first deposit");
 
         // --- Scenario 2: Same collector FC1, deposit again ---
-        wrapper.deposit(deposit1, DEPOSITOR, FC1);
+        wrapper.deposit(deposit1, DEPOSITOR);
 
         (uint256 aumFC1_2,,,) = wrapper.getFeeCollectorState(FC1);
         assertEq(
@@ -404,7 +409,8 @@ contract VaultWrapperDepositWithdrawTest is Test {
         (uint256 aumFC1Before,,,) = wrapper.getFeeCollectorState(FC1);
         (uint256 aumFC2Before,,,) = wrapper.getFeeCollectorState(FC2);
 
-        wrapper.deposit(deposit2, DEPOSITOR, FC2);
+        wrapper.setFeeCollector(FC2);
+        wrapper.deposit(deposit2, DEPOSITOR);
 
         (uint256 aumFC1After,,,) = wrapper.getFeeCollectorState(FC1);
         (uint256 aumFC2After,,,) = wrapper.getFeeCollectorState(FC2);
@@ -442,7 +448,8 @@ contract VaultWrapperDepositWithdrawTest is Test {
         asset.approve(address(wrapper), assets);
 
         // Deposit
-        uint256 shares = wrapper.deposit(assets, DEPOSITOR, FEE_COLLECTOR);
+        wrapper.setFeeCollector(FEE_COLLECTOR);
+        uint256 shares = wrapper.deposit(assets, DEPOSITOR);
 
         // Immediately redeem ALL shares (no time warp — no fee accrual)
         uint256 returned = wrapper.redeem(shares, DEPOSITOR, DEPOSITOR);
@@ -500,7 +507,8 @@ contract VaultWrapperFeeCollectionTest is Test {
         asset.mint(DEPOSITOR, depositAmount);
         vm.startPrank(DEPOSITOR);
         asset.approve(address(wrapper), depositAmount);
-        wrapper.deposit(depositAmount, DEPOSITOR, FEE_COLLECTOR);
+        wrapper.setFeeCollector(FEE_COLLECTOR);
+        wrapper.deposit(depositAmount, DEPOSITOR);
         vm.stopPrank();
 
         // Warp forward so fees accrue
@@ -548,7 +556,8 @@ contract VaultWrapperFeeCollectionTest is Test {
         asset.mint(DEPOSITOR, depositAmount);
         vm.startPrank(DEPOSITOR);
         asset.approve(address(wrapper), depositAmount);
-        wrapper.deposit(depositAmount, DEPOSITOR, FEE_COLLECTOR);
+        wrapper.setFeeCollector(FEE_COLLECTOR);
+        wrapper.deposit(depositAmount, DEPOSITOR);
         vm.stopPrank();
 
         // Warp forward
@@ -593,13 +602,15 @@ contract VaultWrapperFeeCollectionTest is Test {
         asset.mint(depositor1, deposit1 * 2);
         vm.startPrank(depositor1);
         asset.approve(address(wrapper), deposit1 * 2);
-        wrapper.deposit(deposit1, depositor1, fc1);
+        wrapper.setFeeCollector(fc1);
+        wrapper.deposit(deposit1, depositor1);
         vm.stopPrank();
 
         asset.mint(depositor2, deposit2 * 2);
         vm.startPrank(depositor2);
         asset.approve(address(wrapper), deposit2 * 2);
-        wrapper.deposit(deposit2, depositor2, fc2);
+        wrapper.setFeeCollector(fc2);
+        wrapper.deposit(deposit2, depositor2);
         vm.stopPrank();
 
         // Warp forward so fees accrue
@@ -607,11 +618,11 @@ contract VaultWrapperFeeCollectionTest is Test {
 
         // Trigger settlement by doing another deposit for each
         vm.startPrank(depositor1);
-        wrapper.deposit(deposit1, depositor1, fc1);
+        wrapper.deposit(deposit1, depositor1);
         vm.stopPrank();
 
         vm.startPrank(depositor2);
-        wrapper.deposit(deposit2, depositor2, fc2);
+        wrapper.deposit(deposit2, depositor2);
         vm.stopPrank();
 
         // Read individual settled virtual shares
