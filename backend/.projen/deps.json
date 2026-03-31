@@ -71,6 +71,11 @@
       "type": "build"
     },
     {
+      "name": "@aws-sdk/client-s3",
+      "version": "3.1020.0",
+      "type": "runtime"
+    },
+    {
       "name": "@aws-sdk/client-ssm",
       "version": "3.1020.0",
       "type": "runtime"

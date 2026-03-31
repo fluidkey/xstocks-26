@@ -33,6 +33,9 @@
         },
         {
           "spawn": "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda"
+        },
+        {
+          "spawn": "bundle:lambda-functions/fetch-prices/fetch-prices.lambda"
         }
       ]
     },
@@ -69,6 +72,24 @@
       "steps": [
         {
           "exec": "esbuild --bundle src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
+        }
+      ]
+    },
+    "bundle:lambda-functions/fetch-prices/fetch-prices.lambda": {
+      "name": "bundle:lambda-functions/fetch-prices/fetch-prices.lambda",
+      "description": "Create a JavaScript bundle from src/lambda-functions/fetch-prices/fetch-prices.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/fetch-prices/fetch-prices.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/fetch-prices/fetch-prices.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
+        }
+      ]
+    },
+    "bundle:lambda-functions/fetch-prices/fetch-prices.lambda:watch": {
+      "name": "bundle:lambda-functions/fetch-prices/fetch-prices.lambda:watch",
+      "description": "Continuously update the JavaScript bundle from src/lambda-functions/fetch-prices/fetch-prices.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/fetch-prices/fetch-prices.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/fetch-prices/fetch-prices.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
         }
       ]
     },
@@ -268,7 +289,7 @@
           "exec": "yarn install --no-immutable"
         },
         {
-          "exec": "yarn up @stylistic/eslint-plugin @types/jest @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser aws-cdk esbuild eslint-import-resolver-typescript eslint-plugin-import eslint jest jest-junit projen ts-jest ts-node typescript @aws-sdk/client-ssm aws-cdk-lib constructs viem"
+          "exec": "yarn up @stylistic/eslint-plugin @types/jest @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser aws-cdk esbuild eslint-import-resolver-typescript eslint-plugin-import eslint jest jest-junit projen ts-jest ts-node typescript @aws-sdk/client-s3 @aws-sdk/client-ssm aws-cdk-lib constructs viem"
         },
         {
           "exec": "npx projen"

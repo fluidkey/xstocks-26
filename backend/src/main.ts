@@ -1,9 +1,10 @@
-import { App, aws_apigateway, aws_logs, CfnOutput, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
+import { App, aws_apigateway, aws_events, aws_events_targets, aws_logs, aws_s3, CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { AddAddressFunction } from './lambda-functions/add-address/add-address-function';
 import { AlchemyWebhookListenerFunction } from './lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener-function';
+import { FetchPricesFunction } from './lambda-functions/fetch-prices/fetch-prices-function';
 
 export class XStocksBackendStack extends Stack {
   constructor(scope: Construct, id: string, props: StackProps = {}) {
@@ -58,6 +59,42 @@ export class XStocksBackendStack extends Stack {
     });
 
     alchemyAuthToken.grantRead(addAddress);
+
+    // --- Fetch Prices Lambda (every 10 minutes) ---
+    const pricesBucket = new aws_s3.Bucket(this, 'PricesBucket', {
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+      publicReadAccess: true,
+      blockPublicAccess: aws_s3.BlockPublicAccess.BLOCK_ACLS,
+      cors: [{
+        allowedMethods: [aws_s3.HttpMethods.GET],
+        allowedOrigins: ['*'],
+        allowedHeaders: ['*'],
+      }],
+    });
+
+    const fetchPrices = new FetchPricesFunction(this, 'FetchPrices', {
+      timeout: Duration.seconds(30),
+      environment: {
+        PRICES_BUCKET: pricesBucket.bucketName,
+      },
+      logGroup: new aws_logs.LogGroup(this, 'FetchPricesLogGroup', {
+        removalPolicy: RemovalPolicy.DESTROY,
+        retention: aws_logs.RetentionDays.ONE_WEEK,
+      }),
+    });
+
+    pricesBucket.grantPut(fetchPrices);
+
+    new aws_events.Rule(this, 'FetchPricesSchedule', {
+      schedule: aws_events.Schedule.rate(Duration.minutes(10)),
+      targets: [new aws_events_targets.LambdaFunction(fetchPrices)],
+    });
+
+    new CfnOutput(this, 'PricesFileUrl', {
+      value: `https://${pricesBucket.bucketDomainName}/prices.json`,
+      description: 'Public URL for prices.json',
+    });
 
     // --- API Gateway ---
     const api = new aws_apigateway.RestApi(this, 'XStocksApi', {
