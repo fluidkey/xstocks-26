@@ -69,7 +69,7 @@ contract IntegrationTest is Test {
         address safeAddr,
         uint256 nonce
     ) internal view returns (bytes memory) {
-        bytes32 messageHash = keccak256(abi.encode(block.chainid, token, amount, vault, feePct, safeAddr, nonce));
+        bytes32 messageHash = keccak256(abi.encode("deposit", block.chainid, token, amount, vault, feePct, safeAddr, nonce));
         bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(RELAYER_PK, ethSignedHash);
         return abi.encodePacked(r, s, v);
@@ -84,7 +84,7 @@ contract IntegrationTest is Test {
         address safeAddr,
         uint256 nonce
     ) internal view returns (bytes memory) {
-        bytes32 messageHash = keccak256(abi.encode(block.chainid, token, shares, vault, feePct, safeAddr, nonce));
+        bytes32 messageHash = keccak256(abi.encode("withdraw", block.chainid, token, shares, vault, feePct, safeAddr, nonce));
         bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(RELAYER_PK, ethSignedHash);
         return abi.encodePacked(r, s, v);

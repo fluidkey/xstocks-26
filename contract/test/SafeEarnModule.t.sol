@@ -303,6 +303,7 @@ contract SafeEarnModuleMerkleTest is Test {
         uint256 nonce = 0;
 
         bytes32 messageHash = keccak256(abi.encode(
+            "deposit",
             block.chainid,
             token,
             amount,
