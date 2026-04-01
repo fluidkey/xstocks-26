@@ -95,7 +95,3 @@ npm install && npm run generate
 | Smart contracts | Solidity 0.8.30, Foundry, Gnosis Safe, ERC-4626, OpenZeppelin |
 | Backend | AWS CDK, Lambda, DynamoDB, S3, API Gateway |
 | Frontend | Next.js 16, React 19, Tailwind CSS, wagmi, viem |
-
-## License
-
-See individual package directories for license information.
