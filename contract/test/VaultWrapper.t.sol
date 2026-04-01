@@ -23,7 +23,7 @@ contract VaultWrapperTest is Test {
         underlyingVault = new MockERC4626(
             IERC20(address(asset)), "Test Vault", "vTT"
         );
-        // 100 bps (1%) fee on yield
+        // 100 bps (1%) annualized fee on total assets
         wrapper = VaultWrapper(
             factory.deploy(address(underlyingVault), 100, FEE_COLLECTOR)
         );
@@ -89,7 +89,7 @@ contract VaultWrapperTest is Test {
 
         uint256 shares = wrapper.deposit(assets, DEPOSITOR);
 
-        // Immediately redeem — no yield, no fee
+        // Immediately redeem — no time elapsed, no fee
         uint256 returned = wrapper.redeem(shares, DEPOSITOR, DEPOSITOR);
         vm.stopPrank();
 
@@ -102,10 +102,10 @@ contract VaultWrapperTest is Test {
     }
 
     // ---------------------------------------------------------------
-    // Fee only applies to yield, not principal
+    // No fee when no time has elapsed
     // ---------------------------------------------------------------
 
-    function test_noFeeWithoutYield() public {
+    function test_noFeeWithoutTimeElapsed() public {
         uint256 depositAmount = 1000e18;
 
         asset.mint(DEPOSITOR, depositAmount);
@@ -114,15 +114,16 @@ contract VaultWrapperTest is Test {
         wrapper.deposit(depositAmount, DEPOSITOR);
         vm.stopPrank();
 
-        // No yield generated — no fee shares should be minted
-        assertEq(wrapper.balanceOf(FEE_COLLECTOR), 0, "No fee shares without yield");
+        // No time elapsed — no fee shares should accrue
+        assertEq(wrapper.pendingFeeShares(), 0, "No pending fees without time elapsed");
+        assertEq(wrapper.balanceOf(FEE_COLLECTOR), 0, "No fee shares without time elapsed");
     }
 
     // ---------------------------------------------------------------
-    // Fee accrues correctly on yield
+    // Fee accrues over time on total assets
     // ---------------------------------------------------------------
 
-    function test_feeAccruesOnYield() public {
+    function test_feeAccruesOverTime() public {
         uint256 depositAmount = 1000e18;
 
         asset.mint(DEPOSITOR, depositAmount);
@@ -131,19 +132,43 @@ contract VaultWrapperTest is Test {
         wrapper.deposit(depositAmount, DEPOSITOR);
         vm.stopPrank();
 
-        // Simulate yield by minting extra assets directly to the underlying vault
-        uint256 yieldAmount = 100e18;
-        asset.mint(address(underlyingVault), yieldAmount);
+        // Warp 1 full year — fee should be ~1% of 1000 = ~10 tokens
+        vm.warp(block.timestamp + 365 days);
 
-        // Collect fees — should mint shares to feeCollector
         wrapper.collectFees();
         uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
-        assertGt(feeShares, 0, "Fee shares should be minted on yield");
+        assertGt(feeShares, 0, "Fee shares should be minted after time passes");
 
-        // Fee shares should represent ~1% of yield when redeemed
+        // Fee shares should represent ~1% of total assets (annualized).
+        // Dilution-based fees yield slightly less than the nominal percentage
+        // because minting fee shares dilutes the pool (~0.99% instead of 1%).
         uint256 feeValue = wrapper.convertToAssets(feeShares);
-        uint256 expectedFee = yieldAmount * 100 / 10000;
-        assertApproxEqAbs(feeValue, expectedFee, 1e16, "Fee value should be ~1% of yield");
+        uint256 expectedFee = depositAmount * 100 / 10000; // 1% of 1000e18 = 10e18
+        assertApproxEqAbs(feeValue, expectedFee, 2e17, "Fee value should be ~1% of total assets after 1 year");
+    }
+
+    // ---------------------------------------------------------------
+    // Fee prorates correctly for partial year
+    // ---------------------------------------------------------------
+
+    function test_feeProRatesForPartialYear() public {
+        uint256 depositAmount = 1000e18;
+
+        asset.mint(DEPOSITOR, depositAmount);
+        vm.startPrank(DEPOSITOR);
+        asset.approve(address(wrapper), depositAmount);
+        wrapper.deposit(depositAmount, DEPOSITOR);
+        vm.stopPrank();
+
+        // Warp half a year — fee should be ~0.5% of 1000 = ~5 tokens
+        vm.warp(block.timestamp + 365 days / 2);
+
+        wrapper.collectFees();
+        uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
+        // Dilution effect means actual fee value is slightly below nominal
+        uint256 feeValue = wrapper.convertToAssets(feeShares);
+        uint256 expectedFee = depositAmount * 100 / 10000 / 2; // 0.5% of 1000e18 = 5e18
+        assertApproxEqAbs(feeValue, expectedFee, 1e17, "Fee should be ~0.5% after half a year");
     }
 
     // ---------------------------------------------------------------
@@ -159,31 +184,31 @@ contract VaultWrapperTest is Test {
         wrapper.deposit(depositAmount, DEPOSITOR);
         vm.stopPrank();
 
-        // Simulate yield
-        uint256 yieldAmount = 100e18;
-        asset.mint(address(underlyingVault), yieldAmount);
+        // Warp 1 year so fee accrues
+        vm.warp(block.timestamp + 365 days);
 
         wrapper.collectFees();
         uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
         assertGt(feeShares, 0, "Fee collector should receive wrapper shares");
 
-        // Redeem fee shares to verify asset value is ~1% of yield
+        // Redeem fee shares to verify asset value is ~1% of total assets
         vm.prank(FEE_COLLECTOR);
         uint256 feeAssets = wrapper.redeem(feeShares, FEE_COLLECTOR, FEE_COLLECTOR);
 
+        uint256 expectedFee = depositAmount * 100 / 10000; // 10e18
         assertApproxEqAbs(
             feeAssets,
-            1e18,
-            1e16,
-            "Fee collector should receive ~1% of yield when redeeming"
+            expectedFee,
+            2e17,
+            "Fee collector should receive ~1% of total assets when redeeming after 1 year"
         );
     }
 
     // ---------------------------------------------------------------
-    // Fee collection resets baseline
+    // Fee collection resets timestamp
     // ---------------------------------------------------------------
 
-    function test_collectFeesResetsBaseline() public {
+    function test_collectFeesResetsTimestamp() public {
         uint256 depositAmount = 1000e18;
 
         asset.mint(DEPOSITOR, depositAmount);
@@ -192,11 +217,11 @@ contract VaultWrapperTest is Test {
         wrapper.deposit(depositAmount, DEPOSITOR);
         vm.stopPrank();
 
-        // Simulate yield and collect
-        asset.mint(address(underlyingVault), 100e18);
+        // Warp and collect
+        vm.warp(block.timestamp + 365 days);
         wrapper.collectFees();
 
-        // After collection, calling collectFees again should mint zero new shares
+        // After collection, calling collectFees again immediately should mint zero new shares
         uint256 feeSharesBefore = wrapper.balanceOf(FEE_COLLECTOR);
         wrapper.collectFees();
         uint256 feeSharesAfter = wrapper.balanceOf(FEE_COLLECTOR);
@@ -208,10 +233,10 @@ contract VaultWrapperTest is Test {
     }
 
     // ---------------------------------------------------------------
-    // No-op collectFees when no yield
+    // No-op collectFees when no time elapsed
     // ---------------------------------------------------------------
 
-    function test_collectFeesNoOpWithoutYield() public {
+    function test_collectFeesNoOpWithoutTimeElapsed() public {
         uint256 depositAmount = 1000e18;
 
         asset.mint(DEPOSITOR, depositAmount);
@@ -224,7 +249,7 @@ contract VaultWrapperTest is Test {
         wrapper.collectFees();
         uint256 feeSharesAfter = wrapper.balanceOf(FEE_COLLECTOR);
 
-        assertEq(feeSharesAfter, feeSharesBefore, "No fee shares minted without yield");
+        assertEq(feeSharesAfter, feeSharesBefore, "No fee shares minted without time elapsed");
     }
 
     // ---------------------------------------------------------------
@@ -233,6 +258,26 @@ contract VaultWrapperTest is Test {
 
     function test_feeCollectorIsImmutable() public view {
         assertEq(wrapper.feeCollector(), FEE_COLLECTOR, "Fee collector must match constructor arg");
+    }
+
+    // ---------------------------------------------------------------
+    // Fee accrues even without yield in underlying
+    // ---------------------------------------------------------------
+
+    function test_feeAccruesWithoutUnderlyingYield() public {
+        uint256 depositAmount = 1000e18;
+
+        asset.mint(DEPOSITOR, depositAmount);
+        vm.startPrank(DEPOSITOR);
+        asset.approve(address(wrapper), depositAmount);
+        wrapper.deposit(depositAmount, DEPOSITOR);
+        vm.stopPrank();
+
+        // Warp 1 year — no yield in underlying, but fee still accrues on total assets
+        vm.warp(block.timestamp + 365 days);
+
+        uint256 pending = wrapper.pendingFeeShares();
+        assertGt(pending, 0, "Fee should accrue on total assets even without underlying yield");
     }
 }
 
@@ -256,13 +301,13 @@ contract VaultWrapperUSDCRoundTripTest is Test {
         underlyingVault = new MockERC4626(
             IERC20(address(usdc)), "USDC Vault", "vUSDC"
         );
-        // 300 bps (3%) fee on yield
+        // 300 bps (3%) annualized fee on total assets
         wrapper = VaultWrapper(
             factory.deploy(address(underlyingVault), 300, FEE_COLLECTOR)
         );
     }
 
-    /// @notice Solo depositor deposits USDC, immediately redeems. No yield, no fee.
+    /// @notice Solo depositor deposits USDC, immediately redeems. No time elapsed, no fee.
     function test_usdc_depositRedeemImmediately() public {
         uint256 depositAmount = 1000e6;
 
@@ -294,7 +339,7 @@ contract VaultWrapperUSDCRoundTripTest is Test {
         assertEq(wrapper.balanceOf(DEPOSITOR), 0, "Should have zero shares after full withdrawal");
     }
 
-    /// @notice Fuzz across USDC deposit amounts — immediate redeem, no yield.
+    /// @notice Fuzz across USDC deposit amounts — immediate redeem, no time elapsed.
     function testFuzz_usdc_depositRedeemRoundTrip(uint256 assets) public {
         assets = bound(assets, 1e6, 10_000_000e6);
 
@@ -326,8 +371,8 @@ contract VaultWrapperUSDCRoundTripTest is Test {
         assertApproxEqAbs(usdc.balanceOf(DEPOSITOR), assets, 2, "USDC fuzz withdraw within 2 wei");
     }
 
-    /// @notice Deposit USDC, simulate yield, withdraw. Fee should only apply to yield.
-    function test_usdc_withdrawAfterYield() public {
+    /// @notice Deposit USDC, warp time, withdraw. Fee applies on total assets over time.
+    function test_usdc_withdrawAfterTimeElapsed() public {
         uint256 depositAmount = 1000e6;
 
         usdc.mint(DEPOSITOR, depositAmount);
@@ -336,20 +381,19 @@ contract VaultWrapperUSDCRoundTripTest is Test {
         uint256 shares = wrapper.deposit(depositAmount, DEPOSITOR);
         vm.stopPrank();
 
-        // Simulate 10 USDC yield in the underlying vault
-        usdc.mint(address(underlyingVault), 10e6);
+        // Warp 1 year — 3% annualized fee on 1000 USDC = 30 USDC
+        vm.warp(block.timestamp + 365 days);
 
-        // Redeem all shares — fee dilution is reflected in real-time via
-        // totalSupply() override, so depositor gets principal + yield minus fee.
         vm.prank(DEPOSITOR);
         uint256 returned = wrapper.redeem(shares, DEPOSITOR, DEPOSITOR);
 
-        // Fee = 3% of 10 USDC = 0.3 USDC. Depositor gets ~1009.7 USDC
-        assertApproxEqAbs(returned, 1009_700_000, 10_000, "Should get principal + yield - fee");
+        // Depositor gets ~970 USDC (1000 - 30 fee), with dilution effect
+        uint256 expectedReturn = depositAmount - (depositAmount * 300 / 10000);
+        assertApproxEqAbs(returned, expectedReturn, 1_000_000, "Should get principal minus annualized fee");
     }
 
-    /// @notice Deposit, time passes (no actual yield in mock), withdraw works fine.
-    function test_usdc_depositWarpWithdrawNoYield() public {
+    /// @notice Deposit, warp short time, withdraw — fee is prorated.
+    function test_usdc_depositWarpWithdrawShortTime() public {
         uint256 depositAmount = 500e6;
 
         usdc.mint(DEPOSITOR, depositAmount);
@@ -357,13 +401,14 @@ contract VaultWrapperUSDCRoundTripTest is Test {
         usdc.approve(address(wrapper), depositAmount);
         uint256 shares = wrapper.deposit(depositAmount, DEPOSITOR);
 
-        // Warp 2 hours — no yield in mock vault, so no fee
+        // Warp 2 hours — very small fee
         vm.warp(block.timestamp + 2 hours);
 
         uint256 returned = wrapper.redeem(shares, DEPOSITOR, DEPOSITOR);
         vm.stopPrank();
 
-        // No yield means no fee — should get back full deposit
-        assertApproxEqAbs(returned, depositAmount, 2, "No yield means no fee deduction");
+        // 2 hours of 3% annual on 500 USDC is tiny (~0.003 USDC)
+        // Should get back nearly all of the deposit
+        assertApproxEqAbs(returned, depositAmount, 10_000, "Short time means negligible fee");
     }
 }

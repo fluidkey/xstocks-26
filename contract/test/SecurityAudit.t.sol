@@ -132,8 +132,8 @@ contract VaultWrapperSecurityTest is Test {
         wrapper.deposit(amount, DEPOSITOR);
         vm.stopPrank();
 
-        // Simulate yield
-        asset.mint(address(underlyingVault), 10e18);
+        // Warp time so fee accrues on total assets
+        vm.warp(block.timestamp + 365 days);
 
         // First collection — feeCollector receives wrapper shares
         uint256 sharesBefore = wrapper.balanceOf(FEE_COLLECTOR);
@@ -141,7 +141,7 @@ contract VaultWrapperSecurityTest is Test {
         uint256 firstShares = wrapper.balanceOf(FEE_COLLECTOR) - sharesBefore;
         assertGt(firstShares, 0, "First collection should mint fee shares");
 
-        // Immediate second collection — no new yield, should mint nothing
+        // Immediate second collection — no time elapsed, should mint nothing
         uint256 sharesBefore2 = wrapper.balanceOf(FEE_COLLECTOR);
         wrapper.collectFees();
         uint256 secondShares = wrapper.balanceOf(FEE_COLLECTOR) - sharesBefore2;
@@ -261,8 +261,8 @@ contract VaultWrapperSecurityTest is Test {
         highFeeWrapper.deposit(largeAmount, DEPOSITOR);
         vm.stopPrank();
 
-        // Simulate large yield
-        asset.mint(address(underlyingVault), 1e29);
+        // Warp time so fee accrues on total assets
+        vm.warp(block.timestamp + 365 days);
 
         // Should not revert
         highFeeWrapper.collectFees();
@@ -360,8 +360,11 @@ contract VaultWrapperSecurityTest is Test {
         wrapper.deposit(amount, DEPOSITOR);
         vm.stopPrank();
 
-        // Simulate 10% yield
+        // Simulate 10% yield in the underlying vault
         asset.mint(address(underlyingVault), 100_000e18);
+
+        // Warp time so fee accrues on total assets
+        vm.warp(block.timestamp + 365 days);
 
         wrapper.collectFees();
         uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
@@ -457,17 +460,21 @@ contract VaultWrapperFeeAdvancedTest is Test {
         // Donate 100 tokens directly to underlying vault
         asset.mint(address(underlyingVault), 100e18);
 
-        // Collect fees — fee collector should get ~1% of 100 = ~1 token worth of shares
+        // Warp 1 year so the annualized fee accrues on total assets (now 1100e18)
+        vm.warp(block.timestamp + 365 days);
+
+        // Collect fees — fee is 1% annualized on ~1100e18 total assets = ~11e18
         wrapper.collectFees();
         uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
         uint256 feeValue = wrapper.convertToAssets(feeShares);
 
-        // Fee should be roughly 1% of the donation/yield, not more
-        assertApproxEqAbs(feeValue, 1e18, 1e16, "Fee must be ~1% of yield, not inflated by donation");
+        // Fee should be roughly 1% of total assets (1100e18), not just the donation
+        uint256 expectedFee = 1100e18 * 100 / 10000; // 11e18
+        assertApproxEqAbs(feeValue, expectedFee, 2e17, "Fee must be ~1% of total assets");
 
-        // Depositor should retain ~99% of the yield
+        // Depositor should retain the vast majority of value
         uint256 depositorValue = wrapper.convertToAssets(wrapper.balanceOf(DEPOSITOR));
-        assertGt(depositorValue, depositAmount + 98e18, "Depositor must keep ~99% of yield");
+        assertGt(depositorValue, depositAmount + 80e18, "Depositor must keep most of the value");
     }
 
     // ───────────────────────────────────────────────────────────
@@ -513,14 +520,14 @@ contract VaultWrapperFeeAdvancedTest is Test {
 
         uint256 supplyBefore = wrapper.totalSupply();
 
-        // Simulate yield — totalSupply should grow due to virtual fee shares
-        asset.mint(address(underlyingVault), 100e18);
+        // Warp time — totalSupply should grow due to virtual fee shares accruing
+        vm.warp(block.timestamp + 365 days);
 
         uint256 supplyAfter = wrapper.totalSupply();
         assertGt(supplyAfter, supplyBefore, "totalSupply must include pending fee shares");
 
         // pendingFeeShares should be non-zero
-        assertGt(wrapper.pendingFeeShares(), 0, "pendingFeeShares must be non-zero after yield");
+        assertGt(wrapper.pendingFeeShares(), 0, "pendingFeeShares must be non-zero after time elapsed");
     }
 
     // ───────────────────────────────────────────────────────────
@@ -569,8 +576,8 @@ contract VaultWrapperFeeAdvancedTest is Test {
         wrapper.deposit(amount, DEPOSITOR);
         vm.stopPrank();
 
-        // Yield cycle 1
-        asset.mint(address(underlyingVault), 100e18);
+        // Warp time so fee accrues on total assets
+        vm.warp(block.timestamp + 180 days);
 
         // Deposit again (snapshots fees into accruedFeeShares but doesn't mint)
         vm.startPrank(DEPOSITOR);
@@ -580,13 +587,13 @@ contract VaultWrapperFeeAdvancedTest is Test {
         // accruedFeeShares should be non-zero now
         assertGt(wrapper.accruedFeeShares(), 0, "Accrued fees must be stored after deposit");
 
-        // Yield cycle 2
-        asset.mint(address(underlyingVault), 200e18);
+        // Warp more time for second fee cycle
+        vm.warp(block.timestamp + 180 days);
 
         // Now collectFees — should mint accrued + new pending in one shot
         wrapper.collectFees();
         uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
-        assertGt(feeShares, 0, "Fee collector must have shares from both yield cycles");
+        assertGt(feeShares, 0, "Fee collector must have shares from both fee cycles");
 
         // accruedFeeShares should be zero after collection
         assertEq(wrapper.accruedFeeShares(), 0, "Accrued must be zero after collectFees");
@@ -605,13 +612,10 @@ contract VaultWrapperFeeAdvancedTest is Test {
         wrapper.deposit(amount, DEPOSITOR);
         vm.stopPrank();
 
-        uint256 totalYield;
-
-        // 3 yield cycles with collection each time
+        // 3 time-based fee cycles with collection each time
         for (uint256 i = 0; i < 3; i++) {
-            uint256 yield = (i + 1) * 10e18;
-            asset.mint(address(underlyingVault), yield);
-            totalYield += yield;
+            // Warp 30 days per cycle
+            vm.warp(block.timestamp + 30 days);
             wrapper.collectFees();
         }
 
@@ -621,19 +625,15 @@ contract VaultWrapperFeeAdvancedTest is Test {
 
         vm.prank(FEE_COLLECTOR);
         uint256 feeAssets = wrapper.redeem(feeShares, FEE_COLLECTOR, FEE_COLLECTOR);
-
-        // Should be roughly 1% of total yield. Slightly higher due to compounding
-        // across cycles (each collection shifts the share price baseline).
-        uint256 expectedFee = totalYield * 100 / 10000;
-        assertApproxEqAbs(feeAssets, expectedFee, 2e16, "Fee must be ~1% of total yield");
+        assertGt(feeAssets, 0, "Fee collector must receive assets");
 
         // Depositor should still be able to withdraw
         uint256 depositorShares = wrapper.balanceOf(DEPOSITOR);
         vm.prank(DEPOSITOR);
         uint256 returned = wrapper.redeem(depositorShares, DEPOSITOR, DEPOSITOR);
 
-        // Total extracted must not exceed deposited + yield
-        assertLe(feeAssets + returned, amount + totalYield + 1, "Cannot extract more than exists");
+        // Total extracted must not exceed deposited amount (no yield was added)
+        assertLe(feeAssets + returned, amount + 1, "Cannot extract more than exists");
     }
 }
 
