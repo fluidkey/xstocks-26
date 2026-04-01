@@ -15,7 +15,13 @@ export function TimelineDot() {
   );
 }
 
-/** One timeline step: dot + stem (to next step) beside body. Stem grows with body height. */
+/**
+ * One timeline step: dot + stem beside body.
+ * Dot is centered on the first line using the same `text-base` + `leading-snug` as body text:
+ * - Rail uses `h-[1lh]` so its height equals the first line box of the copy.
+ * - Dot is absolutely positioned at `50% + 0.48ex` then `translate(-50%,-50%)`, so the
+ *   vertical nudge scales with the font’s x-height (matches Work Sans metrics at any zoom).
+ */
 export function TimelineMilestoneRow({
   isLast,
   children,
@@ -26,15 +32,24 @@ export function TimelineMilestoneRow({
   return (
     <div className="flex min-w-0 items-stretch gap-4">
       <div
-        className="flex w-6 shrink-0 flex-col items-center pt-1.5"
+        className="flex h-full min-h-0 w-6 shrink-0 flex-col items-center text-base leading-snug"
         aria-hidden
       >
-        <TimelineDot />
+        <div className="relative isolate h-lh w-full shrink-0">
+          <span
+            className="absolute left-1/2 top-[calc(50%+0.48ex)] -translate-x-1/2 -translate-y-1/2"
+            aria-hidden
+          >
+            <TimelineDot />
+          </span>
+        </div>
         {!isLast ? (
-          <div className="mt-0 min-h-12 w-px flex-1 bg-primary/25" />
+          <div className="min-h-12 w-px flex-1 bg-primary/25" />
         ) : null}
       </div>
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1 text-base leading-snug [&_p]:leading-snug">
+        {children}
+      </div>
     </div>
   );
 }

@@ -43,8 +43,6 @@ const MOCK_CONVERT_TX_HASH =
 const MOCK_EARN_TX_HASH =
   "0xb8e2a4f91c936d7398d5e9f0a6c7b3d1e4f8a2c5061728394a5b6c7d8e9f0a1b2" as const;
 
-const ROW_H = "h-7";
-
 function TimelineTxLink({
   txHash,
   chainId,
@@ -120,7 +118,7 @@ export function EarnTimeline({
               <SepaDepositFirstTimelineRow iban={SEPA_IBAN_EARN} />
             ) : null}
             {key === "bank" ? (
-              <div className={cn("flex items-center justify-between gap-3", ROW_H)}>
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-base leading-snug text-foreground">
                   Received{" "}
                   <span className="font-semibold tabular-nums text-primary">
@@ -136,7 +134,7 @@ export function EarnTimeline({
               </div>
             ) : null}
             {key === "convert" ? (
-              <div className={cn("flex items-center justify-between gap-3", ROW_H)}>
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-base leading-snug text-foreground">
                   Converted to{" "}
                   <span className="font-semibold tabular-nums text-primary">
@@ -151,7 +149,7 @@ export function EarnTimeline({
               </div>
             ) : null}
             {key === "earn" ? (
-              <div className={cn("flex items-center justify-between gap-3", ROW_H)}>
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-base leading-snug text-foreground">
                   Earning yield on{" "}
                   <span className="font-semibold tabular-nums text-primary">

@@ -258,8 +258,6 @@ function OwnTimeline({
   const effectiveBankTx = (bankTxHash ?? MOCK_BANK_TX_HASH) as `0x${string}`;
   const effectiveTslaxTx = (tslaxTxHash ?? MOCK_TSLAX_TX_HASH) as `0x${string}`;
 
-  const ROW_H = "h-7";
-
   type RowKey = "sepa" | "bank" | "tslax";
   const rows: RowKey[] = ["sepa"];
   if (bankDone) rows.push("bank");
@@ -282,7 +280,7 @@ function OwnTimeline({
               <SepaDepositFirstTimelineRow iban={SEPA_IBAN_OWN} />
             ) : null}
             {key === "bank" ? (
-              <div className={cn("flex items-center justify-between gap-3", ROW_H)}>
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-base leading-snug text-foreground">
                   Received{" "}
                   <span className="font-semibold tabular-nums text-primary">
@@ -298,7 +296,7 @@ function OwnTimeline({
               </div>
             ) : null}
             {key === "tslax" ? (
-              <div className={cn("flex items-center justify-between gap-3", ROW_H)}>
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-base leading-snug text-foreground">
                   Purchased{" "}
                   <span className="font-semibold tabular-nums text-primary">

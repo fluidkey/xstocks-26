@@ -21,6 +21,10 @@ type Props = {
   /** AUSD on the active stealth Safe (timeline “received from bank”). */
   ausdBalanceWei: bigint;
   ausdDecimals: number | null;
+  /** Tesla xStock USD price from prices feed; second line = qty × this. */
+  tslaxPriceUsd: number | null;
+  /** Prices feed still loading (show placeholder for USD line when qty > 0). */
+  tslaxPriceLoading: boolean;
   sendFromBank: OwnFlowProps["sendFromBank"];
   buyTslax: OwnFlowProps["buyTslax"];
 };
@@ -28,9 +32,13 @@ type Props = {
 function OwnBalanceHeader({
   tslaxBalanceWei,
   ausdDecimals,
+  tslaxPriceUsd,
+  tslaxPriceLoading,
 }: {
   tslaxBalanceWei: bigint;
   ausdDecimals: number | null;
+  tslaxPriceUsd: number | null;
+  tslaxPriceLoading: boolean;
 }) {
   const parsed =
     ausdDecimals == null
@@ -42,13 +50,17 @@ function OwnBalanceHeader({
       ? "0"
       : parsed.toLocaleString(undefined, { maximumFractionDigits: 6 });
 
-  const usd =
+  const usdLine =
     parsed == null || parsed === 0
       ? "0"
-      : parsed.toLocaleString(undefined, {
-          minimumFractionDigits: 0,
-          maximumFractionDigits: 2,
-        });
+      : tslaxPriceLoading
+        ? "…"
+        : tslaxPriceUsd != null && Number.isFinite(tslaxPriceUsd)
+          ? (parsed * tslaxPriceUsd).toLocaleString(undefined, {
+              minimumFractionDigits: 0,
+              maximumFractionDigits: 2,
+            })
+          : "—";
 
   return (
     <header className="flex w-full flex-col items-center text-center">
@@ -58,7 +70,7 @@ function OwnBalanceHeader({
       </p>
       <p className="mt-2 text-xl font-medium tabular-nums tracking-tight text-muted-foreground sm:text-2xl">
         <span>$</span>
-        {usd}
+        {usdLine}
       </p>
     </header>
   );
@@ -68,6 +80,8 @@ export function OwnPanel({
   tslaxBalanceWei,
   ausdBalanceWei,
   ausdDecimals,
+  tslaxPriceUsd,
+  tslaxPriceLoading,
   sendFromBank: liveSendFromBank,
   buyTslax: liveBuyTslax,
 }: Props) {
@@ -104,6 +118,8 @@ export function OwnPanel({
       <OwnBalanceHeader
         tslaxBalanceWei={tslaxBalanceWei}
         ausdDecimals={ausdDecimals}
+        tslaxPriceUsd={tslaxPriceUsd}
+        tslaxPriceLoading={tslaxPriceLoading}
       />
       <OwnFlow {...ownFlowProps} />
       <div className="flex flex-col items-center gap-3 border-t border-border/60 pt-8">

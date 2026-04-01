@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useStealthAccounts } from "@/lib/demo/stealth-accounts-context";
 import { useOnchainPortfolio } from "@/lib/hooks/use-onchain-portfolio";
 import { useVaultApyDisplay } from "@/lib/hooks/use-vault-apy-display";
+import { useXstocksPrices } from "@/lib/hooks/use-xstocks-prices";
+import type { VaultApyDisplay } from "@/lib/hooks/use-vault-apy-display";
+import {
+  getTeslaPriceUsd,
+  getVaultAprFromPrices,
+} from "@/lib/xstocks-prices";
 import { useAutoBootstrap } from "@/lib/hooks/use-auto-bootstrap";
 import {
   getSigningAccount,
@@ -48,7 +54,33 @@ export function Dashboard() {
   );
   const { perSafe, aggregated, vaultTotals, isLoading: portfolioLoading } =
     useOnchainPortfolio(safes);
-  const apyQuery = useVaultApyDisplay();
+  const morphoApyQuery = useVaultApyDisplay();
+  const pricesQuery = useXstocksPrices();
+
+  const tslaxPriceUsd = useMemo(
+    () => getTeslaPriceUsd(pricesQuery.data),
+    [pricesQuery.data],
+  );
+
+  const earnApyDisplay: VaultApyDisplay | undefined = useMemo(() => {
+    const fromFeed = getVaultAprFromPrices(
+      pricesQuery.data,
+      getEnv().morphoVaultAddress,
+    );
+    if (fromFeed != null) {
+      return {
+        apyDecimal: fromFeed,
+        rewardApyDecimal: null,
+        source: "prices",
+        error: false,
+      };
+    }
+    return morphoApyQuery.data;
+  }, [pricesQuery.data, morphoApyQuery.data]);
+
+  const earnApyLoading =
+    earnApyDisplay?.apyDecimal == null &&
+    (pricesQuery.isPending || morphoApyQuery.isPending);
 
   const activeSnap = useMemo(() => {
     if (!activeAccount) return undefined;
@@ -146,6 +178,8 @@ export function Dashboard() {
             tslaxBalanceWei={activeSnap?.underlyingFromShares ?? 0n}
             ausdBalanceWei={activeSnap?.ausdBalance ?? 0n}
             ausdDecimals={vaultTotals.ausdDecimals}
+            tslaxPriceUsd={tslaxPriceUsd}
+            tslaxPriceLoading={pricesQuery.isPending}
             sendFromBank={depositConfirmed ? "completed" : "pending"}
             buyTslax={
               !depositConfirmed
@@ -164,8 +198,8 @@ export function Dashboard() {
             }}
             vaultAssetsSum={aggregated.vaultAssetsSum}
             ausdDecimals={vaultTotals.ausdDecimals}
-            apy={apyQuery.data}
-            apyLoading={apyQuery.isLoading}
+            apy={earnApyDisplay}
+            apyLoading={earnApyLoading}
             ausdBalanceWei={activeSnap?.ausdBalance ?? 0n}
             vaultUnderlyingWei={activeSnap?.underlyingFromShares ?? 0n}
             depositConfirmed={depositConfirmed}

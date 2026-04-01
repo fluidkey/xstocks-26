@@ -70,7 +70,7 @@ function CopyableText({
 export function SepaDepositFirstTimelineRow({ iban }: { iban: string }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0 text-base leading-relaxed text-foreground">
+      <div className="min-w-0 text-base leading-snug text-foreground">
         Deposit Euros to{" "}
         <CopyableText label="IBAN" value={iban} mono /> (
         <CopyableText label="beneficiary name" value={SEPA_BENEFICIARY_NAME} />
