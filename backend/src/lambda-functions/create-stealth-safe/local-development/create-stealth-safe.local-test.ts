@@ -3,7 +3,7 @@ import * as lambdaLocal from 'lambda-local';
 
 const jsonPayload = {
   body: JSON.stringify({
-    idUser: 'usr_XXX',
+    idUser: 'own',  // either 'own' or 'earn'
     ownerAddress: '0xE1934217f1adf611420576af84438e8F865078dd',
   }),
   isBase64Encoded: false,

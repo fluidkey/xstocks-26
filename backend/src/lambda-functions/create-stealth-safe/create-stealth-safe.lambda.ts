@@ -11,6 +11,10 @@ const ALCHEMY_API_URL = 'https://dashboard.alchemy.com/api/graphql/variables';
 const VALID_ID_USERS = ['own', 'earn'] as const;
 type ValidIdUser = typeof VALID_ID_USERS[number];
 
+// Destination token addresses per idUser — determines what the Relay swap targets
+const AUSD_ADDRESS = '0x00000000efe302beaa2b3e6e1b18d08d69a9012a';
+const TSLAX_ADDRESS = '0x8aD3c73F833d3F9A523aB01476625F269aEB7Cf0';
+
 async function createVariable(authToken: string, variableName: string, items: string[]) {
   const url = `${ALCHEMY_API_URL}/${variableName}`;
   const res = await fetch(url, {
@@ -60,8 +64,8 @@ export async function handler(event: {
     getParam('/xstocks/alchemy-auth-token'),
     getParam('/xstocks/bridgexyz-customer-id'),
     getParam('/xstocks/bridgexyz-api-key'),
-    getParam('/xstocks/bridgexyz-virtual-account-own'),
-    getParam('/xstocks/bridgexyz-virtual-account-earn'),
+    getParam('/xstocks/bridgexyz-virtual-account-own'),  // to convert then in TSL share
+    getParam('/xstocks/bridgexyz-virtual-account-earn'), // to convert then into aUSD
   ]);
 
   const bridgeVirtualAccount = idUser === 'own' ? bridgeVirtualAccountOwn : bridgeVirtualAccountEarn;
@@ -109,7 +113,11 @@ export async function handler(event: {
   await createVariable(alchemyAuthToken, 'trackedAddressesPadded', [padded]);
   console.log('Address tracked via Alchemy:', checksummedAddress);
 
-  // 6. Get Relay deposit address for USDC -> AUSD swap to the safe
+  // 6. Get Relay deposit address — swap target depends on the user type:
+  //    own  → buy TSLAx share token
+  //    earn → swap USDC to aUSD (yield strategy)
+  const destinationCurrency = idUser === 'own' ? TSLAX_ADDRESS : AUSD_ADDRESS;
+
   const relayRes = await fetch('https://api.relay.link/quote/v2', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -118,7 +126,7 @@ export async function handler(event: {
       originChainId: 1,
       originCurrency: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // USDC
       destinationChainId: 1,
-      destinationCurrency: '0x00000000efe302beaa2b3e6e1b18d08d69a9012a', // AUSD
+      destinationCurrency: destinationCurrency,
       tradeType: 'EXACT_INPUT',
       recipient: checksummedAddress,
       amount: '2000000', // minimum amount to get a quote
@@ -182,6 +190,7 @@ export async function handler(event: {
       safeAddress,
       ownerAddress,
       deploymentStatus: 'NONE',
+      relayDepositAddress: depositAddress,
     }),
   };
 }
