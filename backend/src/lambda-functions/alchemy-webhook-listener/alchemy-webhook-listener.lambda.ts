@@ -2,6 +2,7 @@ import { createHmac } from 'crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { hexToBigInt } from 'viem';
 import { AlchemyWebhookEvent } from './types';
 
@@ -27,11 +28,7 @@ function isValidSignature(body: string, signature: string, signingKey: string): 
   return signature === hmac.digest('hex');
 }
 
-export async function handler(event: {
-  headers: Record<string, string | undefined>;
-  body?: string;
-  isBase64Encoded?: boolean;
-}) {
+export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const rawBody = event.isBase64Encoded
     ? Buffer.from(event.body ?? '', 'base64').toString('utf8')
     : event.body ?? '';

@@ -333,13 +333,13 @@
       },
       "steps": [
         {
-          "exec": "yarn dlx npm-check-updates@18 --upgrade --target=minor --peer --no-deprecated --dep=dev,peer,prod,optional --filter=@types/jest,@types/node,esbuild,eslint-import-resolver-typescript,eslint-plugin-import,jest,projen,ts-jest,ts-node,typescript,lambda-local,viem"
+          "exec": "yarn dlx npm-check-updates@18 --upgrade --target=minor --peer --no-deprecated --dep=dev,peer,prod,optional --filter=@types/jest,@types/node,esbuild,eslint-import-resolver-typescript,eslint-plugin-import,jest,projen,ts-jest,ts-node,typescript"
         },
         {
           "exec": "yarn install --no-immutable"
         },
         {
-          "exec": "yarn up @stylistic/eslint-plugin @types/jest @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser aws-cdk esbuild eslint-import-resolver-typescript eslint-plugin-import eslint jest jest-junit projen ts-jest ts-node typescript @aws-sdk/client-dynamodb @aws-sdk/client-s3 @aws-sdk/client-ssm @aws-sdk/lib-dynamodb aws-cdk-lib constructs lambda-local viem"
+          "exec": "yarn up @stylistic/eslint-plugin @types/aws-lambda @types/jest @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser aws-cdk esbuild eslint-import-resolver-typescript eslint-plugin-import eslint jest jest-junit projen ts-jest ts-node typescript @aws-sdk/client-dynamodb @aws-sdk/client-s3 @aws-sdk/client-ssm @aws-sdk/lib-dynamodb aws-cdk-lib aws-lambda constructs lambda-local viem"
         },
         {
           "exec": "npx projen"

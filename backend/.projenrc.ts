@@ -25,10 +25,12 @@ const project = new awscdk.AwsCdkTypeScriptApp({
     '@aws-sdk/client-s3@3.1020.0',
     '@aws-sdk/client-dynamodb@3.1020.0',
     '@aws-sdk/lib-dynamodb@3.1020.0',
-    'lambda-local',
-    'viem',
+    'lambda-local@2.2.0',
+    'viem@2.47.6',
+    'aws-lambda@1.0.7',
   ],
   devDeps: [
+    '@types/aws-lambda@8.10.161',
   ],
   lambdaOptions: {
     runtime: LambdaRuntime.NODEJS_22_X,
