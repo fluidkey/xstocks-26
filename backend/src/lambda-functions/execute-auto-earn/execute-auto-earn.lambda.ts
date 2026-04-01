@@ -1,5 +1,4 @@
 import assert from 'assert';
-import Safe from '@safe-global/protocol-kit';
 import { getMultiSendDeployment } from '@safe-global/safe-deployments';
 import { AbiItem, createPublicClient, createWalletClient, encodeFunctionData, erc20Abi, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -7,6 +6,7 @@ import { mainnet } from 'viem/chains';
 import { AUTO_EARN_ABI, AUTO_EARN_MODULE_ADDRESS } from '../_utils/addresses-and-abis';
 import { dynamo } from '../_utils/dynamo-client';
 import { encodeMultisend } from '../_utils/multicall-encoder';
+import { initPredictedSafe } from '../_utils/safe-init';
 import { getParam } from '../_utils/ssm-params';
 import { ExecuteAutoEarnRequest } from './types';
 
@@ -58,21 +58,13 @@ export async function handler(event: ExecuteAutoEarnRequest) {
   // 4a. If safe is not deployed yet, add the deployment tx
   const needsDeploy = record.deploymentStatus !== 'DEPLOYED';
   if (needsDeploy) {
-    const protocolKit = await Safe.init({
-      provider: providerUrl,
-      signer: relayerPrivateKey,
-      predictedSafe: {
-        safeAccountConfig: {
-          owners: [relayerAccount.address],
-          threshold: 1,
-          to: record.initializerExtraTo,
-          data: record.initializerExtraData,
-        },
-        safeDeploymentConfig: {
-          saltNonce: record.saltNonce,
-          safeVersion: '1.3.0',
-        },
-      },
+    const protocolKit = await initPredictedSafe({
+      providerUrl,
+      signerPrivateKey: relayerPrivateKey,
+      ownerAddress: relayerAccount.address,
+      initializerExtraTo: record.initializerExtraTo,
+      initializerExtraData: record.initializerExtraData,
+      saltNonce: record.saltNonce,
     });
 
     const deploymentTx = await protocolKit.createSafeDeploymentTransaction();

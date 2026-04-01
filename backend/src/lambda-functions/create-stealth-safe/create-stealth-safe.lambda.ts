@@ -1,8 +1,8 @@
-import Safe from '@safe-global/protocol-kit';
 import { getAddress, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { dynamo } from '../_utils/dynamo-client';
 import { getInitializerExtraFields } from '../_utils/initializer-extra-fields';
+import { initPredictedSafe } from '../_utils/safe-init';
 import { getParam } from '../_utils/ssm-params';
 import { CreateStealthSafeRequest } from './types';
 
@@ -59,22 +59,13 @@ export async function handler(event: {
   const initializerExtra = getInitializerExtraFields();
 
   // 3. Predict the safe address (no on-chain tx yet)
-
-  const protocolKit = await Safe.init({
-    provider: providerUrl,
-    signer: relayerPrivateKey,
-    predictedSafe: {
-      safeAccountConfig: {
-        owners: [relayerAccount.address],
-        threshold: 1,
-        to: initializerExtra.to,
-        data: initializerExtra.data,
-      },
-      safeDeploymentConfig: {
-        saltNonce: toHex(0),
-        safeVersion: '1.3.0',
-      },
-    },
+  const protocolKit = await initPredictedSafe({
+    providerUrl,
+    signerPrivateKey: relayerPrivateKey,
+    ownerAddress: relayerAccount.address,
+    initializerExtraTo: initializerExtra.to,
+    initializerExtraData: initializerExtra.data,
+    saltNonce: toHex(0),
   });
 
   const safeAddress = await protocolKit.getAddress();
