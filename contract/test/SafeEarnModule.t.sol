@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {SafeEarnModule} from "../src/SafeEarnModule.sol";
 import {VaultWrapperFactory} from "../src/VaultWrapperFactory.sol";
 import {MessageHashUtils} from "@openzeppelin/utils/cryptography/MessageHashUtils.sol";
+import {MockERC20, MockERC4626} from "./mocks/MockERC4626.sol";
+import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 
 /// @notice Test harness exposing internal helpers for isolated testing.
 contract SafeEarnModuleHarness is SafeEarnModule {
@@ -258,6 +260,196 @@ contract SafeEarnModuleMerkleTest is Test {
         bytes32 ethHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(RELAYER_PK, ethHash);
         return abi.encodePacked(r, s, v);
+    }
+}
+
+contract SafeEarnModuleValidMerkleProofTest is Test {
+    SafeEarnModule public module;
+    VaultWrapperFactory public factory;
+    MockSafe public mockSafe;
+    MockERC20 public asset;
+
+    uint256 constant RELAYER_PK = 0xBEEF;
+    address RELAYER;
+    address constant WRAPPED_NATIVE = address(0xE770);
+
+    // 8 real mock ERC-4626 vaults, populated in setUp
+    address[8] public vaults;
+
+    address constant FC = address(0xFEE);
+    uint256 constant FEE = 100;
+
+    function setUp() public {
+        RELAYER = vm.addr(RELAYER_PK);
+        factory = new VaultWrapperFactory();
+        module = new SafeEarnModule(
+            RELAYER, WRAPPED_NATIVE, address(this), address(factory)
+        );
+        mockSafe = new MockSafe();
+
+        // Deploy a shared underlying asset and 8 distinct vaults
+        asset = new MockERC20("Mock", "MCK", 18);
+        for (uint256 i = 0; i < 8; i++) {
+            vaults[i] = address(
+                new MockERC4626(IERC20(address(asset)), "Vault", "vMCK")
+            );
+        }
+    }
+
+    /// @dev OZ MerkleProof uses sorted-pair hashing internally.
+    function _hashPair(bytes32 a, bytes32 b) internal pure returns (bytes32) {
+        return a < b
+            ? keccak256(abi.encodePacked(a, b))
+            : keccak256(abi.encodePacked(b, a));
+    }
+
+    /// @dev Compute leaf the same way the contract does.
+    function _leaf(uint256 idx) internal view returns (bytes32) {
+        return keccak256(abi.encodePacked(block.chainid, vaults[idx], FEE, FC));
+    }
+
+    /// @dev Build the full 8-leaf tree and return (root, leaves).
+    function _buildTree() internal view returns (bytes32 root, bytes32[8] memory leaves) {
+        for (uint256 i = 0; i < 8; i++) {
+            leaves[i] = _leaf(i);
+        }
+
+        // Layer 1: 4 nodes
+        bytes32 n01 = _hashPair(leaves[0], leaves[1]);
+        bytes32 n23 = _hashPair(leaves[2], leaves[3]);
+        bytes32 n45 = _hashPair(leaves[4], leaves[5]);
+        bytes32 n67 = _hashPair(leaves[6], leaves[7]);
+
+        // Layer 2: 2 nodes
+        bytes32 n0123 = _hashPair(n01, n23);
+        bytes32 n4567 = _hashPair(n45, n67);
+
+        // Root
+        root = _hashPair(n0123, n4567);
+    }
+
+    /// @dev Build a 3-element proof for leaf at `idx` (0-7) in the 8-leaf tree.
+    function _proofFor(uint8 idx, bytes32[8] memory leaves) internal pure returns (bytes32[] memory proof) {
+        proof = new bytes32[](3);
+
+        // Layer 1: 4 nodes
+        bytes32 n01 = _hashPair(leaves[0], leaves[1]);
+        bytes32 n23 = _hashPair(leaves[2], leaves[3]);
+        bytes32 n45 = _hashPair(leaves[4], leaves[5]);
+        bytes32 n67 = _hashPair(leaves[6], leaves[7]);
+
+        // Layer 2: 2 nodes
+        bytes32 n0123 = _hashPair(n01, n23);
+        bytes32 n4567 = _hashPair(n45, n67);
+
+        // Sibling at each layer depends on the leaf index
+        if (idx < 4) {
+            proof[2] = n4567;
+            if (idx < 2) {
+                proof[1] = n23;
+                proof[0] = leaves[idx ^ 1]; // sibling leaf
+            } else {
+                proof[1] = n01;
+                proof[0] = leaves[idx ^ 1];
+            }
+        } else {
+            proof[2] = n0123;
+            if (idx < 6) {
+                proof[1] = n67;
+                proof[0] = leaves[idx ^ 1];
+            } else {
+                proof[1] = n45;
+                proof[0] = leaves[idx ^ 1];
+            }
+        }
+    }
+
+    function _signMsg(bytes32 messageHash) internal view returns (bytes memory) {
+        bytes32 ethHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(RELAYER_PK, ethHash);
+        return abi.encodePacked(r, s, v);
+    }
+
+    // ---------------------------------------------------------------
+    // Valid 8-leaf merkle proof accepted by autoDeposit
+    // ---------------------------------------------------------------
+
+    /// @dev Deposits through leaf 0 with a valid 3-step proof.
+    function test_validMerkleProof_leaf0() public {
+        (bytes32 root, bytes32[8] memory leaves) = _buildTree();
+        bytes32[] memory proof = _proofFor(0, leaves);
+
+        vm.prank(address(mockSafe));
+        module.onInstall(abi.encode(root));
+
+        SafeEarnModule.VaultParams memory vp = SafeEarnModule.VaultParams({
+            underlyingVault: vaults[0], feePercentage: FEE, feeCollector: FC
+        });
+
+        bytes memory sig = _signMsg(
+            keccak256(abi.encode(
+                "deposit", block.chainid, address(0x1111), uint256(1 ether),
+                vaults[0], FEE, FC, address(mockSafe), uint256(0)
+            ))
+        );
+
+        // Should NOT revert — proof is valid
+        module.autoDeposit(
+            address(0x1111), 1 ether, vp,
+            address(mockSafe), 0, sig, proof
+        );
+    }
+
+    /// @dev Deposits through leaf 5 to test a non-zero index path.
+    function test_validMerkleProof_leaf5() public {
+        (bytes32 root, bytes32[8] memory leaves) = _buildTree();
+        bytes32[] memory proof = _proofFor(5, leaves);
+
+        vm.prank(address(mockSafe));
+        module.onInstall(abi.encode(root));
+
+        SafeEarnModule.VaultParams memory vp = SafeEarnModule.VaultParams({
+            underlyingVault: vaults[5], feePercentage: FEE, feeCollector: FC
+        });
+
+        bytes memory sig = _signMsg(
+            keccak256(abi.encode(
+                "deposit", block.chainid, address(0x1111), uint256(1 ether),
+                vaults[5], FEE, FC, address(mockSafe), uint256(1)
+            ))
+        );
+
+        module.autoDeposit(
+            address(0x1111), 1 ether, vp,
+            address(mockSafe), 1, sig, proof
+        );
+    }
+
+    /// @dev Proves that a valid proof for one leaf fails for a different leaf.
+    function test_validProofWrongLeafReverts() public {
+        (bytes32 root, bytes32[8] memory leaves) = _buildTree();
+        // Get proof for leaf 0 but try to use it with leaf 3's vault
+        bytes32[] memory proof = _proofFor(0, leaves);
+
+        vm.prank(address(mockSafe));
+        module.onInstall(abi.encode(root));
+
+        SafeEarnModule.VaultParams memory vp = SafeEarnModule.VaultParams({
+            underlyingVault: vaults[3], feePercentage: FEE, feeCollector: FC
+        });
+
+        bytes memory sig = _signMsg(
+            keccak256(abi.encode(
+                "deposit", block.chainid, address(0x1111), uint256(1 ether),
+                vaults[3], FEE, FC, address(mockSafe), uint256(0)
+            ))
+        );
+
+        vm.expectRevert(SafeEarnModule.InvalidMerkleProof.selector);
+        module.autoDeposit(
+            address(0x1111), 1 ether, vp,
+            address(mockSafe), 0, sig, proof
+        );
     }
 }
 
