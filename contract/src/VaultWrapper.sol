@@ -121,7 +121,10 @@ contract VaultWrapper is ERC20 {
         address _underlying,
         uint256 _feePercentage,
         address _feeCollector
-    ) ERC20("VaultWrapper", "vWRP") {
+    ) ERC20(
+        string.concat("Wrapped ", IERC4626(_underlying).name()),
+        string.concat("w", IERC4626(_underlying).symbol())
+    ) {
         underlying = IERC4626(_underlying);
         asset = IERC20(IERC4626(_underlying).asset());
         feePercentage = _feePercentage;
