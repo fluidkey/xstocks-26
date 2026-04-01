@@ -76,10 +76,6 @@ export function SepaDepositFirstTimelineRow({ iban }: { iban: string }) {
         <CopyableText label="beneficiary name" value={SEPA_BENEFICIARY_NAME} />
         )
       </div>
-      <span
-        className="size-9 shrink-0 opacity-0 pointer-events-none"
-        aria-hidden
-      />
     </div>
   );
 }

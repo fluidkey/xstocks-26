@@ -2,6 +2,10 @@
 
 import { SquareArrowOutUpRight } from "lucide-react";
 import { formatUnits } from "viem";
+import {
+  EARN_STEP2_TOKEN_DECIMALS,
+  formatEarnYieldIndexerUsd,
+} from "@/lib/api/xstocks";
 import { blockExplorerTxUrl } from "@/lib/explorer";
 import { getEnv } from "@/lib/env";
 import { cn } from "@/lib/utils";
@@ -13,7 +17,10 @@ import {
   SepaDepositFirstTimelineRow,
   SEPA_IBAN_EARN,
 } from "./SepaDepositFirstTimelineRow";
+import { RelayDepositFirstRow } from "./RelayDepositFirstRow";
 import { TimelineMilestoneRow } from "./TimelineMilestoneRow";
+
+const USDC_DECIMALS = 6;
 
 export type EarnTimelineProps = {
   deposit: DepositFlowStatus;
@@ -22,9 +29,16 @@ export type EarnTimelineProps = {
   ausdBalanceWei: bigint;
   vaultUnderlyingWei: bigint;
   ausdDecimals: number | null;
+  relayDepositAddress?: string | null;
+  chainLabel?: string;
+  usdcAmountRaw?: bigint | null;
   bankTxHash?: `0x${string}` | null;
   convertTxHash?: `0x${string}` | null;
+  /** Indexer step-2 credited amount (6 decimals). */
+  convertAmountRaw?: bigint | null;
   earnTxHash?: `0x${string}` | null;
+  /** Indexer step-3 yield transfer `amount` (18 decimals); drives earn-row “$X”. */
+  earnYieldAmountRaw?: bigint | null;
 };
 
 function formatUsdFromWei(wei: bigint, decimals: number | null): string {
@@ -36,12 +50,14 @@ function formatUsdFromWei(wei: bigint, decimals: number | null): string {
   });
 }
 
-const MOCK_BANK_TX_HASH =
-  "0xa7f3c91e4b82d6058efa12c4b9d0e7536f18492caeb01d7f8e5a394bc206d817" as const;
-const MOCK_CONVERT_TX_HASH =
-  "0x4c1d8b9e2f70a56381edc9247fa03b6c59148ef2d3a7b09c45e118efad362904" as const;
-const MOCK_EARN_TX_HASH =
-  "0xb8e2a4f91c936d7398d5e9f0a6c7b3d1e4f8a2c5061728394a5b6c7d8e9f0a1b2" as const;
+function formatUsdc(raw: bigint | null | undefined): string {
+  if (raw == null || raw === 0n) return "—";
+  const n = Number(formatUnits(raw, USDC_DECIMALS));
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
 
 function TimelineTxLink({
   txHash,
@@ -71,6 +87,26 @@ function TimelineTxLink({
   );
 }
 
+function TxLinkSlot({
+  txHash,
+  chainId,
+  label,
+}: {
+  txHash?: `0x${string}` | null;
+  chainId: number;
+  label: string;
+}) {
+  if (!txHash) {
+    return (
+      <span
+        className="size-9 shrink-0 opacity-0 pointer-events-none"
+        aria-hidden
+      />
+    );
+  }
+  return <TimelineTxLink txHash={txHash} chainId={chainId} label={label} />;
+}
+
 export function EarnTimeline({
   deposit,
   convert,
@@ -78,9 +114,14 @@ export function EarnTimeline({
   ausdBalanceWei,
   vaultUnderlyingWei,
   ausdDecimals,
+  relayDepositAddress,
+  chainLabel = "Ethereum",
+  usdcAmountRaw,
   bankTxHash,
   convertTxHash,
+  convertAmountRaw,
   earnTxHash,
+  earnYieldAmountRaw,
 }: EarnTimelineProps) {
   const chainId = getEnv().chainId;
 
@@ -91,15 +132,30 @@ export function EarnTimeline({
   const receivedWei =
     ausdBalanceWei > 0n ? ausdBalanceWei : vaultUnderlyingWei;
   const receivedUsd = formatUsdFromWei(receivedWei, ausdDecimals);
-  const vaultUsd = formatUsdFromWei(vaultUnderlyingWei, ausdDecimals);
+  const convertAusdDisplay =
+    convertAmountRaw != null && convertAmountRaw > 0n
+      ? Number(
+          formatUnits(convertAmountRaw, EARN_STEP2_TOKEN_DECIMALS),
+        ).toLocaleString(undefined, {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        })
+      : null;
+  /** After routing, on-chain AUSD is often 0; avoid showing "0" when we have no indexer amount yet. */
+  const convertAmountLabel =
+    convertAusdDisplay ??
+    (receivedWei > 0n ? receivedUsd : null) ??
+    "—";
+  const earnVaultLabel =
+    earnYieldAmountRaw != null && earnYieldAmountRaw > 0n
+      ? formatEarnYieldIndexerUsd(earnYieldAmountRaw)
+      : "—";
+  const usdcDisplay = formatUsdc(usdcAmountRaw ?? null);
+  const bankAmountLabel =
+    usdcDisplay !== "—" ? usdcDisplay : receivedUsd;
 
-  const effectiveBankTx = (bankTxHash ?? MOCK_BANK_TX_HASH) as `0x${string}`;
-  const effectiveConvertTx = (convertTxHash ??
-    MOCK_CONVERT_TX_HASH) as `0x${string}`;
-  const effectiveEarnTx = (earnTxHash ?? MOCK_EARN_TX_HASH) as `0x${string}`;
-
-  type RowKey = "sepa" | "bank" | "convert" | "earn";
-  const rows: RowKey[] = ["sepa"];
+  type RowKey = "funding" | "bank" | "convert" | "earn";
+  const rows: RowKey[] = ["funding"];
   if (depositDone) rows.push("bank");
   if (convertDone) rows.push("convert");
   if (earnDone) rows.push("earn");
@@ -111,25 +167,38 @@ export function EarnTimeline({
         "ring-1 ring-black/3 sm:px-6 sm:py-6",
       )}
     >
-      <div className="flex w-full min-w-0 flex-col gap-0" aria-label="Earn timeline">
+      <div
+        className="flex w-full min-w-0 flex-col gap-0"
+        aria-label="Earn timeline"
+      >
         {rows.map((key, i) => (
           <TimelineMilestoneRow key={key} isLast={i === rows.length - 1}>
-            {key === "sepa" ? (
-              <SepaDepositFirstTimelineRow iban={SEPA_IBAN_EARN} />
+            {key === "funding" ? (
+              relayDepositAddress ? (
+                <div className="flex w-full min-w-0 flex-col gap-0">
+                  <SepaDepositFirstTimelineRow iban={SEPA_IBAN_EARN} />
+                  <RelayDepositFirstRow
+                    relayAddress={relayDepositAddress}
+                    chainLabel={chainLabel}
+                  />
+                </div>
+              ) : (
+                <SepaDepositFirstTimelineRow iban={SEPA_IBAN_EARN} />
+              )
             ) : null}
             {key === "bank" ? (
               <div className="flex items-center justify-between gap-3">
                 <p className="text-base leading-snug text-foreground">
                   Received{" "}
                   <span className="font-semibold tabular-nums text-primary">
-                    ${receivedUsd}
+                    ${bankAmountLabel}
                   </span>{" "}
-                  from bank
+                  {usdcDisplay !== "—" ? "USDC" : "from bank"}
                 </p>
-                <TimelineTxLink
-                  txHash={effectiveBankTx}
+                <TxLinkSlot
+                  txHash={normalizeTxHash(bankTxHash)}
                   chainId={chainId}
-                  label="bank transfer"
+                  label="USDC deposit"
                 />
               </div>
             ) : null}
@@ -138,11 +207,11 @@ export function EarnTimeline({
                 <p className="text-base leading-snug text-foreground">
                   Converted to{" "}
                   <span className="font-semibold tabular-nums text-primary">
-                    {receivedUsd} AUSD
+                    {convertAmountLabel} AUSD
                   </span>
                 </p>
-                <TimelineTxLink
-                  txHash={effectiveConvertTx}
+                <TxLinkSlot
+                  txHash={normalizeTxHash(convertTxHash)}
                   chainId={chainId}
                   label="AUSD conversion"
                 />
@@ -153,11 +222,11 @@ export function EarnTimeline({
                 <p className="text-base leading-snug text-foreground">
                   Earning yield on{" "}
                   <span className="font-semibold tabular-nums text-primary">
-                    ${vaultUsd}
+                    ${earnVaultLabel}
                   </span>
                 </p>
-                <TimelineTxLink
-                  txHash={effectiveEarnTx}
+                <TxLinkSlot
+                  txHash={normalizeTxHash(earnTxHash)}
                   chainId={chainId}
                   label="vault position"
                 />
@@ -168,4 +237,11 @@ export function EarnTimeline({
       </div>
     </div>
   );
+}
+
+function normalizeTxHash(
+  h: `0x${string}` | null | undefined,
+): `0x${string}` | null {
+  if (h && h.startsWith("0x") && h.length === 66) return h;
+  return null;
 }

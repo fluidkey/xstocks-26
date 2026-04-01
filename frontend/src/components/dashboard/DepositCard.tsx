@@ -53,7 +53,7 @@ export function DepositCard({ address, depositConfirmed }: Props) {
           </span>
           <div>
             <CardTitle className="text-base font-semibold">Deposit</CardTitle>
-            <CardDescription>AUSD to your stealth Safe</CardDescription>
+            <CardDescription>AUSD to your Safe</CardDescription>
           </div>
         </div>
         {depositConfirmed ? (
@@ -100,7 +100,8 @@ export function DepositCard({ address, depositConfirmed }: Props) {
           </div>
         )}
         <p className="text-sm text-muted-foreground">
-          This address is a stealth address you have full control of.
+          USDC to this relay address is credited toward your Safe after
+          indexing.
         </p>
       </CardContent>
     </Card>

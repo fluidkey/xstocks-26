@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "xStocks auto-earn",
-  description: "Auto-earn demo: stealth Safes and Morpho vault.",
+  description: "Auto-earn demo: backend Safes, relays, and Morpho vault.",
 };
 
 export default function RootLayout({

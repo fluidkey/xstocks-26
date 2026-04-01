@@ -16,9 +16,12 @@ const DEMO_STEPS: Pick<OwnFlowProps, "sendFromBank" | "buyTslax">[] = [
 ];
 
 type Props = {
-  /** Vault underlying for header + timeline (“TSLAx” / purchased). */
-  tslaxBalanceWei: bigint;
-  /** AUSD on the active stealth Safe (timeline “received from bank”). */
+  /** Hero line: quantity wei + decimals (Morpho assets or indexer TSLAx). */
+  headerTslaxQtyWei: bigint;
+  headerTslaxQtyDecimals: number | null;
+  /** Vault underlying for timeline (“purchased” step imagery). */
+  vaultUnderlyingWei: bigint;
+  /** AUSD on the Own Safe (timeline “received from bank”). */
   ausdBalanceWei: bigint;
   ausdDecimals: number | null;
   /** Tesla xStock USD price from prices feed; second line = qty × this. */
@@ -27,23 +30,30 @@ type Props = {
   tslaxPriceLoading: boolean;
   sendFromBank: OwnFlowProps["sendFromBank"];
   buyTslax: OwnFlowProps["buyTslax"];
+  teslaDecimals: number | null;
+  bankAmountRaw: bigint | null;
+  tslaxAmountRaw: bigint | null;
+  bankTxHash: `0x${string}` | null;
+  tslaxTxHash: `0x${string}` | null;
+  relayDepositAddress: `0x${string}` | null;
+  chainLabel: string;
 };
 
 function OwnBalanceHeader({
-  tslaxBalanceWei,
-  ausdDecimals,
+  headerTslaxQtyWei,
+  headerTslaxQtyDecimals,
   tslaxPriceUsd,
   tslaxPriceLoading,
 }: {
-  tslaxBalanceWei: bigint;
-  ausdDecimals: number | null;
+  headerTslaxQtyWei: bigint;
+  headerTslaxQtyDecimals: number | null;
   tslaxPriceUsd: number | null;
   tslaxPriceLoading: boolean;
 }) {
   const parsed =
-    ausdDecimals == null
+    headerTslaxQtyDecimals == null
       ? null
-      : Number(formatUnits(tslaxBalanceWei, ausdDecimals));
+      : Number(formatUnits(headerTslaxQtyWei, headerTslaxQtyDecimals));
 
   const qty =
     parsed == null || parsed === 0
@@ -77,32 +87,56 @@ function OwnBalanceHeader({
 }
 
 export function OwnPanel({
-  tslaxBalanceWei,
+  headerTslaxQtyWei,
+  headerTslaxQtyDecimals,
+  vaultUnderlyingWei,
   ausdBalanceWei,
   ausdDecimals,
   tslaxPriceUsd,
   tslaxPriceLoading,
   sendFromBank: liveSendFromBank,
   buyTslax: liveBuyTslax,
+  teslaDecimals: liveTeslaDecimals,
+  bankAmountRaw: liveBankAmountRaw,
+  tslaxAmountRaw: liveTslaxAmountRaw,
+  bankTxHash: liveBankTxHash,
+  tslaxTxHash: liveTslaxTxHash,
+  relayDepositAddress: liveRelayDepositAddress,
+  chainLabel: liveChainLabel,
 }: Props) {
   const [demoIndex, setDemoIndex] = useState<number | null>(null);
 
   const ownFlowProps: OwnFlowProps = useMemo(() => {
     const step = demoIndex !== null ? DEMO_STEPS[demoIndex] : null;
+    const liveTimeline = demoIndex === null;
     return {
       sendFromBank: step?.sendFromBank ?? liveSendFromBank,
       buyTslax: step?.buyTslax ?? liveBuyTslax,
       ausdBalanceWei,
-      vaultUnderlyingWei: tslaxBalanceWei,
+      vaultUnderlyingWei,
       ausdDecimals,
+      teslaDecimals: liveTeslaDecimals,
+      bankAmountRaw: liveTimeline ? liveBankAmountRaw : null,
+      tslaxAmountRaw: liveTimeline ? liveTslaxAmountRaw : null,
+      bankTxHash: liveTimeline ? liveBankTxHash : null,
+      tslaxTxHash: liveTimeline ? liveTslaxTxHash : null,
+      relayDepositAddress: liveRelayDepositAddress,
+      chainLabel: liveChainLabel,
     };
   }, [
     demoIndex,
     liveSendFromBank,
     liveBuyTslax,
     ausdBalanceWei,
-    tslaxBalanceWei,
+    vaultUnderlyingWei,
     ausdDecimals,
+    liveTeslaDecimals,
+    liveBankAmountRaw,
+    liveTslaxAmountRaw,
+    liveBankTxHash,
+    liveTslaxTxHash,
+    liveRelayDepositAddress,
+    liveChainLabel,
   ]);
 
   function advanceDemo() {
@@ -116,8 +150,8 @@ export function OwnPanel({
   return (
     <div className="flex w-full flex-col gap-10">
       <OwnBalanceHeader
-        tslaxBalanceWei={tslaxBalanceWei}
-        ausdDecimals={ausdDecimals}
+        headerTslaxQtyWei={headerTslaxQtyWei}
+        headerTslaxQtyDecimals={headerTslaxQtyDecimals}
         tslaxPriceUsd={tslaxPriceUsd}
         tslaxPriceLoading={tslaxPriceLoading}
       />

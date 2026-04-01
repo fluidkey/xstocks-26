@@ -7,6 +7,7 @@ import { formatUnits } from "viem";
 import { blockExplorerTxUrl } from "@/lib/explorer";
 import { getEnv } from "@/lib/env";
 import { cn } from "@/lib/utils";
+import { RelayDepositFirstRow } from "@/components/dashboard/RelayDepositFirstRow";
 import {
   SepaDepositFirstTimelineRow,
   SEPA_IBAN_OWN,
@@ -19,15 +20,25 @@ export type TslaxStepStatus = "pending" | "processing" | "completed";
 export type OwnFlowProps = {
   sendFromBank: BankStepStatus;
   buyTslax: TslaxStepStatus;
-  /** AUSD on the stealth Safe (for “received from bank”). */
+  /** AUSD on the Safe (for “received from bank”). */
   ausdBalanceWei: bigint;
   /** Vault underlying / TSLAx position (for “purchased”). */
   vaultUnderlyingWei: bigint;
   ausdDecimals: number | null;
+  /** Tesla xStock decimals from the price feed (indexer `amount` scale). */
+  teslaDecimals: number | null;
+  /** USDC deposited to relay (on-chain / indexer raw, 6 decimals). */
+  bankAmountRaw?: bigint | null;
+  /** Indexed Tesla xStock IN `amount`. */
+  tslaxAmountRaw?: bigint | null;
   /** Set when the bank / AUSD transfer tx is known (Etherscan link on timeline). */
   bankTxHash?: `0x${string}` | null;
   /** Set when the vault / TSLAx purchase tx is known. */
   tslaxTxHash?: `0x${string}` | null;
+  /** Own user relay from `POST /address` (`idUser: "own"`); USDC deposit target in step 1. */
+  relayDepositAddress?: `0x${string}` | null;
+  /** Network label for the on-chain deposit row (e.g. Ethereum). */
+  chainLabel?: string;
 };
 
 function FlowConnector({ active }: { active: boolean }) {
@@ -194,6 +205,17 @@ function formatUsdFromWei(wei: bigint, decimals: number | null): string {
   });
 }
 
+const USDC_DECIMALS = 6;
+
+function formatUsdc(raw: bigint | null | undefined): string {
+  if (raw == null || raw === 0n) return "—";
+  const n = Number(formatUnits(raw, USDC_DECIMALS));
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
+
 function formatTslaxQty(wei: bigint, decimals: number | null): string {
   if (decimals == null) return "0";
   const n = Number(formatUnits(wei, decimals));
@@ -201,12 +223,6 @@ function formatTslaxQty(wei: bigint, decimals: number | null): string {
     ? "0"
     : n.toLocaleString(undefined, { maximumFractionDigits: 6 });
 }
-
-/** Plausible mock tx hashes for timeline explorer links until real txs are wired. */
-const MOCK_BANK_TX_HASH =
-  "0xa7f3c91e4b82d6058efa12c4b9d0e7536f18492caeb01d7f8e5a394bc206d817" as const;
-const MOCK_TSLAX_TX_HASH =
-  "0x4c1d8b9e2f70a56381edc9247fa03b6c59148ef2d3a7b09c45e118efad362904" as const;
 
 function TimelineTxLink({
   txHash,
@@ -242,21 +258,33 @@ function OwnTimeline({
   ausdBalanceWei,
   vaultUnderlyingWei,
   ausdDecimals,
+  teslaDecimals,
+  bankAmountRaw,
+  tslaxAmountRaw,
   bankTxHash,
   tslaxTxHash,
+  relayDepositAddress,
+  chainLabel = "Ethereum",
 }: OwnFlowProps) {
   const chainId = getEnv().chainId;
 
   const bankDone = sendFromBank === "completed";
   const tslaxDone = buyTslax === "completed";
 
+  /** AUSD-on-safe / vault fallback for the bank milestone when USDC raw is unknown (matches Earn timeline). */
   const receivedWei =
     ausdBalanceWei > 0n ? ausdBalanceWei : vaultUnderlyingWei;
   const receivedUsd = formatUsdFromWei(receivedWei, ausdDecimals);
-  const tslaxQty = formatTslaxQty(vaultUnderlyingWei, ausdDecimals);
+  const usdcDisplay = formatUsdc(bankAmountRaw ?? null);
+  const bankAmountLabel =
+    usdcDisplay !== "—" ? usdcDisplay : receivedUsd;
 
-  const effectiveBankTx = (bankTxHash ?? MOCK_BANK_TX_HASH) as `0x${string}`;
-  const effectiveTslaxTx = (tslaxTxHash ?? MOCK_TSLAX_TX_HASH) as `0x${string}`;
+  const tslaxQty =
+    vaultUnderlyingWei > 0n
+      ? formatTslaxQty(vaultUnderlyingWei, ausdDecimals)
+      : tslaxAmountRaw != null && tslaxAmountRaw > 0n && teslaDecimals != null
+        ? formatTslaxQty(tslaxAmountRaw, teslaDecimals)
+        : formatTslaxQty(0n, ausdDecimals);
 
   type RowKey = "sepa" | "bank" | "tslax";
   const rows: RowKey[] = ["sepa"];
@@ -277,22 +305,38 @@ function OwnTimeline({
         {rows.map((key, i) => (
           <TimelineMilestoneRow key={key} isLast={i === rows.length - 1}>
             {key === "sepa" ? (
-              <SepaDepositFirstTimelineRow iban={SEPA_IBAN_OWN} />
+              relayDepositAddress ? (
+                <div className="flex w-full min-w-0 flex-col gap-0">
+                  <SepaDepositFirstTimelineRow iban={SEPA_IBAN_OWN} />
+                  <RelayDepositFirstRow
+                    relayAddress={relayDepositAddress}
+                    chainLabel={chainLabel}
+                    assetLabel="USDC"
+                    copyAriaLabel="Copy relay deposit address"
+                  />
+                </div>
+              ) : (
+                <SepaDepositFirstTimelineRow iban={SEPA_IBAN_OWN} />
+              )
             ) : null}
             {key === "bank" ? (
               <div className="flex items-center justify-between gap-3">
                 <p className="text-base leading-snug text-foreground">
                   Received{" "}
                   <span className="font-semibold tabular-nums text-primary">
-                    ${receivedUsd}
+                    ${bankAmountLabel}
                   </span>{" "}
-                  from bank
+                  {usdcDisplay !== "—" ? "USDC" : "from bank"}
                 </p>
-                <TimelineTxLink
-                  txHash={effectiveBankTx}
-                  chainId={chainId}
-                  label="bank transfer"
-                />
+                {bankTxHash ? (
+                  <TimelineTxLink
+                    txHash={bankTxHash}
+                    chainId={chainId}
+                    label="bank transfer"
+                  />
+                ) : (
+                  <span className="size-9 shrink-0" aria-hidden />
+                )}
               </div>
             ) : null}
             {key === "tslax" ? (
@@ -303,11 +347,15 @@ function OwnTimeline({
                     {tslaxQty} TSLAx
                   </span>
                 </p>
-                <TimelineTxLink
-                  txHash={effectiveTslaxTx}
-                  chainId={chainId}
-                  label="TSLAx purchase"
-                />
+                {tslaxTxHash ? (
+                  <TimelineTxLink
+                    txHash={tslaxTxHash}
+                    chainId={chainId}
+                    label="TSLAx purchase"
+                  />
+                ) : (
+                  <span className="size-9 shrink-0" aria-hidden />
+                )}
               </div>
             ) : null}
           </TimelineMilestoneRow>
