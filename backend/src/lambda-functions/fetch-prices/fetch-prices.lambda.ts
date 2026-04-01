@@ -17,7 +17,8 @@ const CHAIN = 'ETHEREUM';
 const API_BASE = 'https://chainpro.xyz/api/tokens';
 const MERKL_VAULT_ADDRESS = '0x32401B9fb79065Bc15949DE0BD43927492f02F0C';
 const MERKL_API_BASE = 'https://api.merkl.xyz/v4/opportunities';
-const VAULT_WRAPPER_TOKEN = '0x727f8c82b9c210362bee141a1f26c24ebe7beaa5';
+const VAULT_WRAPPER_TOKEN = '0x9a2ec73c45b5398b6799e960f5d22e1699f2b3cc';
+const VAULT_V2_WRAPPER_TOKEN = '0x02b62300E7877Dbb8f966bB0EADbc63085c854FD';
 
 async function getParam(name: string): Promise<string> {
   const result = await ssm.send(new GetParameterCommand({ Name: name, WithDecryption: true }));
@@ -111,9 +112,10 @@ export async function handler() {
   const underlyingDecimals = underlyingToken?.decimals ?? 6;
 
   // Compute vault and wrapper prices on-chain
-  const [vaultPrice, wrapperPrice] = await Promise.all([
+  const [vaultPrice, wrapperPrice, wrapperV2Price] = await Promise.all([
     computeVaultTokenPrice(publicClient, MERKL_VAULT_ADDRESS as `0x${string}`, underlyingPriceUsd, underlyingDecimals),
     computeVaultTokenPrice(publicClient, VAULT_WRAPPER_TOKEN as `0x${string}`, underlyingPriceUsd, underlyingDecimals),
+    computeVaultTokenPrice(publicClient, VAULT_V2_WRAPPER_TOKEN as `0x${string}`, underlyingPriceUsd, underlyingDecimals),
   ]);
 
   // Fetch pool APR from Merkl
@@ -161,6 +163,17 @@ export async function handler() {
     decimals: 18,
     icon: 'https://storage.googleapis.com/merkl-static-assets/protocols/morpho.svg',
     priceUsd: wrapperPrice,
+    aprCumulated: aprCumulated! - 0.5,
+    aprNative,
+  });
+
+  // Add V2 wrapper token
+  prices.push({
+    tokenAddress: VAULT_V2_WRAPPER_TOKEN,
+    name: 'Vault Wrapper V2 fAUSDe',
+    decimals: 18,
+    icon: 'https://storage.googleapis.com/merkl-static-assets/protocols/morpho.svg',
+    priceUsd: wrapperV2Price,
     aprCumulated: aprCumulated! - 0.5,
     aprNative,
   });
