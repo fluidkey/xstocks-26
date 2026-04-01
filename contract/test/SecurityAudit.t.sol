@@ -421,7 +421,7 @@ contract SafeEarnModuleSecurityTest is Test {
         safe = new TestSafe();
 
         // Leaf includes feeCollector
-        merkleRoot = keccak256(abi.encodePacked(address(underlyingVault), FEE_PCT, FEE_COLLECTOR));
+        merkleRoot = keccak256(abi.encodePacked(block.chainid, address(underlyingVault), FEE_PCT, FEE_COLLECTOR));
         emptyProof = new bytes32[](0);
 
         vm.prank(address(safe));
@@ -546,7 +546,7 @@ contract SafeEarnModuleSecurityTest is Test {
 
     function test_withdrawOnNonDeployedWrapperReverts() public {
         address otherVault = address(0x9999);
-        bytes32 otherRoot = keccak256(abi.encodePacked(otherVault, FEE_PCT, FEE_COLLECTOR));
+        bytes32 otherRoot = keccak256(abi.encodePacked(block.chainid, otherVault, FEE_PCT, FEE_COLLECTOR));
 
         vm.prank(address(safe));
         module.changeMerkleRoot(otherRoot);
@@ -606,7 +606,7 @@ contract SafeEarnModuleSecurityTest is Test {
 
     function test_failedSafeExecRevertsDeposit() public {
         AlwaysFalseSafe falseSafe = new AlwaysFalseSafe();
-        bytes32 root = keccak256(abi.encodePacked(address(underlyingVault), FEE_PCT, FEE_COLLECTOR));
+        bytes32 root = keccak256(abi.encodePacked(block.chainid, address(underlyingVault), FEE_PCT, FEE_COLLECTOR));
 
         vm.prank(address(falseSafe));
         module.onInstall(abi.encode(root));

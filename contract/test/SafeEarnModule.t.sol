@@ -228,7 +228,7 @@ contract SafeEarnModuleMerkleTest is Test {
         address fc = address(0xFEE);
 
         // Single-leaf tree: root = leaf
-        bytes32 root = keccak256(abi.encodePacked(vault, feePct, fc));
+        bytes32 root = keccak256(abi.encodePacked(block.chainid, vault, feePct, fc));
 
         vm.prank(address(mockSafe));
         module.onInstall(abi.encode(root));
@@ -269,11 +269,11 @@ contract SafeEarnModuleMerkleLeafTest is Test {
     function testFuzz_merkleLeafUniqueness(
         address vault1, uint256 fee1, address fc1,
         address vault2, uint256 fee2, address fc2
-    ) public pure {
+    ) public view {
         vm.assume(vault1 != vault2 || fee1 != fee2 || fc1 != fc2);
 
-        bytes32 leaf1 = keccak256(abi.encodePacked(vault1, fee1, fc1));
-        bytes32 leaf2 = keccak256(abi.encodePacked(vault2, fee2, fc2));
+        bytes32 leaf1 = keccak256(abi.encodePacked(block.chainid, vault1, fee1, fc1));
+        bytes32 leaf2 = keccak256(abi.encodePacked(block.chainid, vault2, fee2, fc2));
 
         assertNotEq(leaf1, leaf2, "Different inputs must produce different leaves");
     }

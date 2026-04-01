@@ -294,7 +294,9 @@ contract SafeEarnModule is Ownable {
     }
 
     /// @dev Verify signature, check module initialization, and validate the
-    ///      merkle proof for the (underlyingVault, feePercentage, feeCollector) triple.
+    ///      merkle proof for the (chainId, underlyingVault, feePercentage, feeCollector) tuple.
+    ///      chainId is included in the leaf so a vault authorized on one chain
+    ///      cannot be used on another chain with the same merkle root.
     /// @param messageHash The raw keccak256 message hash.
     /// @param signature   The 65-byte ECDSA signature.
     /// @param safe        The Safe address to verify against.
@@ -307,7 +309,7 @@ contract SafeEarnModule is Ownable {
         _verifySignatureAndReplay(messageHash, signature);
         bytes32 rootHash = safeRootHashes[safe];
         if (rootHash == bytes32(0)) revert ModuleNotInitialized(safe);
-        bytes32 leaf = keccak256(abi.encodePacked(vault.underlyingVault, vault.feePercentage, vault.feeCollector));
+        bytes32 leaf = keccak256(abi.encodePacked(block.chainid, vault.underlyingVault, vault.feePercentage, vault.feeCollector));
         if (!MerkleProof.verify(merkleProof, rootHash, leaf)) revert InvalidMerkleProof();
     }
 
@@ -400,10 +402,15 @@ contract SafeEarnModule is Ownable {
         address wrapper = factory.computeAddress(vault.underlyingVault, vault.feePercentage, vault.feeCollector);
         if (wrapper.code.length == 0) revert WrapperNotDeployed();
 
-        uint256 assets = VaultWrapper(wrapper).convertToAssets(shares);
+        // Read the Safe's asset balance before redeem so we can emit the actual
+        // amount received, not a stale pre-redeem estimate
+        address assetToken = address(VaultWrapper(wrapper).asset());
+        uint256 balBefore = IERC20(assetToken).balanceOf(safe);
+
         bytes memory redeemData = abi.encodeWithSelector(VaultWrapper.redeem.selector, shares, safe, safe);
         if (!ISafe(safe).execTransactionFromModule(wrapper, 0, redeemData, 0)) revert RedeemFailed();
 
+        uint256 assets = IERC20(assetToken).balanceOf(safe) - balBefore;
         emit AutoWithdrawExecuted(safe, token, vault.underlyingVault, shares, assets);
     }
 }

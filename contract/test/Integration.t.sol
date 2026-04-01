@@ -51,7 +51,7 @@ contract IntegrationTest is Test {
         safe = new TestSafe();
 
         // Leaf now includes feeCollector
-        merkleRoot = keccak256(abi.encodePacked(address(underlyingVault), FEE_PCT, FEE_COLLECTOR));
+        merkleRoot = keccak256(abi.encodePacked(block.chainid, address(underlyingVault), FEE_PCT, FEE_COLLECTOR));
         emptyProof = new bytes32[](0);
 
         // Install module — only rootHash now
