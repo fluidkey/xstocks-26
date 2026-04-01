@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStealthAccounts } from "@/lib/demo/stealth-accounts-context";
 import { useOnchainPortfolio } from "@/lib/hooks/use-onchain-portfolio";
 import { useVaultApyDisplay } from "@/lib/hooks/use-vault-apy-display";
@@ -12,10 +12,13 @@ import {
 import { generateStealthSafeForNonce } from "@/lib/stealth/generate-stealth-safe";
 import { registerStealthAccount } from "@/lib/api/client";
 import { getEnv } from "@/lib/env";
-import { EarningStrip } from "./EarningStrip";
-import { DepositCard } from "./DepositCard";
-import { RoutingCard } from "./RoutingCard";
-import { Separator } from "@/components/ui/separator";
+import type {
+  DepositFlowStatus,
+  TriStateFlowStatus,
+} from "@/components/hero/HeroFlow";
+import { AppTopMenu, type AppTopSection } from "@/components/layout/AppTopMenu";
+import { EarnPanel } from "./EarnPanel";
+import { OwnPanel } from "./OwnPanel";
 
 const rotatedVaultCycleIds = new Set<string>();
 
@@ -37,12 +40,14 @@ function nextNonceFromAccounts(
 export function Dashboard() {
   useAutoBootstrap();
   const { accounts, activeAccount, addAccount } = useStealthAccounts();
+  const [section, setSection] = useState<AppTopSection>("earn");
 
   const safes = useMemo(
     () => accounts.map((a) => a.stealthSafeAddress),
     [accounts],
   );
-  const { perSafe, aggregated, vaultTotals } = useOnchainPortfolio(safes);
+  const { perSafe, aggregated, vaultTotals, isLoading: portfolioLoading } =
+    useOnchainPortfolio(safes);
   const apyQuery = useVaultApyDisplay();
 
   const activeSnap = useMemo(() => {
@@ -59,6 +64,20 @@ export function Dashboard() {
     activeSnap?.underlyingFromShares != null &&
     activeSnap.underlyingFromShares > 0n;
   const routingInProgress = depositConfirmed && !routingDone;
+
+  const heroDeposit: DepositFlowStatus = depositConfirmed
+    ? "completed"
+    : "not_started";
+  const heroConvert: TriStateFlowStatus = !depositConfirmed
+    ? "not_started"
+    : routingDone
+      ? "completed"
+      : "processing";
+  const heroEarn: TriStateFlowStatus = !routingDone
+    ? "not_started"
+    : portfolioLoading || aggregated.vaultAssetsSum === 0n
+      ? "processing"
+      : "completed";
 
   useEffect(() => {
     if (!activeAccount || !routingDone) return;
@@ -118,32 +137,43 @@ export function Dashboard() {
 
   return (
     <div className="relative min-h-full selection:bg-primary/15">
+      <AppTopMenu value={section} onValueChange={setSection} />
       <div
-        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,oklch(0.92_0.06_175/0.35),transparent)]"
-        aria-hidden
-      />
-      <div className="mx-auto flex w-full max-w-lg flex-col gap-8 px-4 py-12 sm:px-6 sm:py-16">
-        <header className="space-y-1">
-          <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            xStocks auto-earn
-          </h1>
-          <Separator className="mt-6 max-w-12 rounded-full bg-primary/40" />
-        </header>
-
-        <EarningStrip
-          vaultAssetsSum={aggregated.vaultAssetsSum}
-          ausdDecimals={vaultTotals.ausdDecimals}
-          apy={apyQuery.data}
-          apyLoading={apyQuery.isLoading}
-        />
-
-        <div className="flex flex-col gap-5">
-          <DepositCard
-            address={activeAccount?.stealthSafeAddress ?? null}
-            depositConfirmed={depositConfirmed}
+        className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10 pb-16 sm:px-6 sm:py-14"
+      >
+        {section === "own" ? (
+          <OwnPanel
+            tslaxBalanceWei={activeSnap?.underlyingFromShares ?? 0n}
+            ausdBalanceWei={activeSnap?.ausdBalance ?? 0n}
+            ausdDecimals={vaultTotals.ausdDecimals}
+            sendFromBank={depositConfirmed ? "completed" : "pending"}
+            buyTslax={
+              !depositConfirmed
+                ? "pending"
+                : routingDone
+                  ? "completed"
+                  : "processing"
+            }
           />
-          <RoutingCard inProgress={routingInProgress} done={routingDone} />
-        </div>
+        ) : (
+          <EarnPanel
+            heroLive={{
+              deposit: heroDeposit,
+              convert: heroConvert,
+              earn: heroEarn,
+            }}
+            vaultAssetsSum={aggregated.vaultAssetsSum}
+            ausdDecimals={vaultTotals.ausdDecimals}
+            apy={apyQuery.data}
+            apyLoading={apyQuery.isLoading}
+            ausdBalanceWei={activeSnap?.ausdBalance ?? 0n}
+            vaultUnderlyingWei={activeSnap?.underlyingFromShares ?? 0n}
+            depositConfirmed={depositConfirmed}
+            routingInProgress={routingInProgress}
+            routingDone={routingDone}
+            stealthSafeAddress={activeAccount?.stealthSafeAddress ?? null}
+          />
+        )}
       </div>
     </div>
   );
