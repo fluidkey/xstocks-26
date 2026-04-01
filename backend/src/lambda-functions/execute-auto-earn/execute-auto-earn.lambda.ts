@@ -1,9 +1,8 @@
 import assert from 'assert';
-import { getMultiSendDeployment } from '@safe-global/safe-deployments';
+import { getMultiSendCallOnlyDeployment } from '@safe-global/safe-deployments';
 import { AbiItem, createPublicClient, createWalletClient, encodeAbiParameters, encodeFunctionData, erc20Abi, http, keccak256 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
-import { ExecuteAutoEarnRequest } from './types';
 import { AUTO_EARN_ABI, AUTO_EARN_MODULE_ADDRESS } from '../_utils/addresses-and-abis';
 import { dynamo } from '../_utils/dynamo-client';
 import { findVaultProof, loadMerkleTree } from '../_utils/merkle-tree-reader';
@@ -11,6 +10,7 @@ import { encodeMultisend } from '../_utils/multicall-encoder';
 import { initPredictedSafe } from '../_utils/safe-init';
 import { getParam } from '../_utils/ssm-params';
 import { TOKEN_TO_VAULT } from '../_utils/vault-config';
+import { ExecuteAutoEarnRequest } from './types';
 
 export async function handler(event: ExecuteAutoEarnRequest) {
   const { safeAddress, tokenAddress } = event;
@@ -159,12 +159,12 @@ export async function handler(event: ExecuteAutoEarnRequest) {
   let txValue: bigint;
 
   if (txs.length > 1) {
-    const multisendDeployment = getMultiSendDeployment({
+    const multisendDeployment = getMultiSendCallOnlyDeployment({
       network: '1',
       version: '1.3.0',
       released: true,
     });
-    assert(!!multisendDeployment, 'Missing multisend for chain 1');
+    assert(!!multisendDeployment, 'Missing MultiSendCallOnly for chain 1');
 
     const encoded = encodeMultisend(
       txs.map((tx) => ({
