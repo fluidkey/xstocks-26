@@ -78,7 +78,6 @@ export async function handler(event: {
   ]);
 
   const bridgeVirtualAccount = idUser === 'own' ? bridgeVirtualAccountOwn : bridgeVirtualAccountEarn;
-  const relayerAccount = privateKeyToAccount(relayerPrivateKey as `0x${string}`);
   const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
 
   // 2. Get initializer extra fields (enables AutoEarn module during deployment)
