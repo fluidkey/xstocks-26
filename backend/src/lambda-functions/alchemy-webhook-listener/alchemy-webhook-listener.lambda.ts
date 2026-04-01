@@ -88,7 +88,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       TableName: tableName,
       Item: {
         address: params.trackedAddress.toLowerCase(),
-        sk: `${params.blockNumber}#${params.txHash}#${params.logIndex}`,
+        sk: `${params.blockNumber}#${params.txHash}#${params.logIndex}#${params.direction}`,
         txHash: params.txHash,
         blockNumber: params.blockNumber,
         timestamp: blockTimestamp,
