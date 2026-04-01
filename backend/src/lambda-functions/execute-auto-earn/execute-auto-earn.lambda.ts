@@ -70,13 +70,16 @@ export async function handler(sqsEvent: SQSEvent) {
       initializerExtraData: record.initializerExtraData,
       saltNonce: record.saltNonce,
     });
-
-    const deploymentTx = await protocolKit.createSafeDeploymentTransaction();
-    txs.push({
-      to: deploymentTx.to as `0x${string}`,
-      data: deploymentTx.data as `0x${string}`,
-      value: BigInt(deploymentTx.value),
-    });
+    try {
+      const deploymentTx = await protocolKit.createSafeDeploymentTransaction();
+      txs.push({
+        to: deploymentTx.to as `0x${string}`,
+        data: deploymentTx.data as `0x${string}`,
+        value: BigInt(deploymentTx.value),
+      });
+    } catch (e) {
+      console.error(e);
+    }
   }
   // 4b. Look up which vault this token maps to
   const vaultMapping = TOKEN_TO_VAULT.find(

@@ -1,10 +1,11 @@
 import { getAddress, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CreateStealthSafeRequest } from './types';
+import { CORS_HEADERS } from '../_utils/cors-headers';
 import { dynamo } from '../_utils/dynamo-client';
 import { getInitializerExtraFields } from '../_utils/initializer-extra-fields';
 import { initPredictedSafe } from '../_utils/safe-init';
 import { getParam } from '../_utils/ssm-params';
+import { CreateStealthSafeRequest } from './types';
 
 const ALCHEMY_API_URL = 'https://dashboard.alchemy.com/api/graphql/variables';
 
@@ -44,15 +45,15 @@ export async function handler(event: {
   try {
     request = JSON.parse(rawBody);
   } catch {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON' }) };
+    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
   if (!request.idUser || !request.ownerAddress) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'idUser and ownerAddress are required' }) };
+    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'idUser and ownerAddress are required' }) };
   }
 
   if (!VALID_ID_USERS.includes(request.idUser as ValidIdUser)) {
-    return { statusCode: 400, body: JSON.stringify({ error: `idUser must be one of: ${VALID_ID_USERS.join(', ')}` }) };
+    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: `idUser must be one of: ${VALID_ID_USERS.join(', ')}` }) };
   }
 
   const { idUser, ownerAddress } = request;
@@ -194,6 +195,7 @@ export async function handler(event: {
 
   return {
     statusCode: 200,
+    headers: CORS_HEADERS,
     body: JSON.stringify({
       safeAddress,
       ownerAddress,

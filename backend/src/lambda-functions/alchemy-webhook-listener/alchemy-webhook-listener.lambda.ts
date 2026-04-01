@@ -1,10 +1,10 @@
-import { createHmac, randomUUID } from 'crypto';
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { createHmac, randomUUID } from 'crypto';
 import { hexToBigInt } from 'viem';
-import { AlchemyWebhookEvent } from './types';
 import { dynamo } from '../_utils/dynamo-client';
+import { AlchemyWebhookEvent } from './types';
 
 const ssm = new SSMClient({});
 const sqs = new SQSClient({});
@@ -69,7 +69,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     return { statusCode: 200, body: 'OK - no block data' };
   }
 
-  const blockTimestamp = Math.floor(new Date(block.timestamp).getTime() / 1000);
+  const blockTimestamp = typeof block.timestamp === 'number' ? block.timestamp : Math.floor(new Date(block.timestamp).getTime() / 1000);
   const tableName = 'xstocks-address-transaction';
 
   async function writeTx(params: {

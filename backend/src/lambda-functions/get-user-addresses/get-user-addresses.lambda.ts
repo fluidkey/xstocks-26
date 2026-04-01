@@ -1,3 +1,4 @@
+import { CORS_HEADERS } from '../_utils/cors-headers';
 import { dynamo } from '../_utils/dynamo-client';
 
 export async function handler(event: {
@@ -7,7 +8,7 @@ export async function handler(event: {
   if (!idUser) {
     return {
       statusCode: 400,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
       body: JSON.stringify({ error: 'Missing id_user' }),
     };
   }
@@ -25,7 +26,7 @@ export async function handler(event: {
 
   return {
     statusCode: 200,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
     body: JSON.stringify({ data }),
   };
 }
