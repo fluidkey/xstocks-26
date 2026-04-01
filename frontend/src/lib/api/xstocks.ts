@@ -9,10 +9,10 @@ export const EARN_STEP2_TOKEN_DECIMALS = 6;
 
 /**
  * Earn step 3: yield ERC-20 credited to the safe (`direction: IN`).
- * Indexer rows use `tokenContract` for this asset; mints may use `from: 0x0`, not this address.
+ * **Vault Wrapper V2 fAUSDe** — same row as in `prices.json` from the prices feed.
  */
 export const EARN_STEP3_YIELD_TOKEN_CONTRACT =
-  "0x9a2ec73c45b5398b6799e960f5d22e1699f2b3cc" as const;
+  "0x02b62300E7877Dbb8f966bB0EADbc63085c854FD" as const;
 
 /** Raw `amount` on indexer txs for step-3 yield transfers uses 18 decimals. */
 export const EARN_STEP3_YIELD_DECIMALS = 18;

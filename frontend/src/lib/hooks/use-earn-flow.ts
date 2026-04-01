@@ -1,5 +1,29 @@
 "use client";
 
+import type { HeroFlowStatuses } from "@/components/hero/HeroFlow";
+import {
+  createStealthSafe,
+  EARN_STEP3_YIELD_TOKEN_CONTRACT,
+  getAddressTransactions,
+  mergeTransactionsByHash,
+  pickEarnStep2ConversionTx,
+  pickEarnStep3YieldTx,
+} from "@/lib/api/xstocks";
+import { erc20Abi } from "@/lib/contracts/erc20";
+import { erc4626Abi } from "@/lib/contracts/erc4626";
+import {
+  getEarnSigningAccount,
+  subscribeEarnDemoKey,
+} from "@/lib/demo/local-account";
+import {
+  clearEarnSession,
+  loadEarnSession,
+  patchEarnSession,
+  saveEarnSession,
+  type EarnSessionV1,
+} from "@/lib/earn/earn-session";
+import { getEnv } from "@/lib/env";
+import { useOnchainPortfolio, type PerSafeSnapshot } from "@/lib/hooks/use-onchain-portfolio";
 import {
   useCallback,
   useEffect,
@@ -11,32 +35,8 @@ import {
 } from "react";
 import type { Address, PublicClient } from "viem";
 import { parseAbiItem } from "viem";
-import { mainnet } from "wagmi/chains";
 import { usePublicClient, useWatchContractEvent } from "wagmi";
-import {
-  createStealthSafe,
-  EARN_STEP3_YIELD_TOKEN_CONTRACT,
-  getAddressTransactions,
-  mergeTransactionsByHash,
-  pickEarnStep2ConversionTx,
-  pickEarnStep3YieldTx,
-} from "@/lib/api/xstocks";
-import {
-  clearEarnSession,
-  loadEarnSession,
-  patchEarnSession,
-  saveEarnSession,
-  type EarnSessionV1,
-} from "@/lib/earn/earn-session";
-import { erc20Abi } from "@/lib/contracts/erc20";
-import { erc4626Abi } from "@/lib/contracts/erc4626";
-import { getEnv } from "@/lib/env";
-import {
-  getEarnSigningAccount,
-  subscribeEarnDemoKey,
-} from "@/lib/demo/local-account";
-import type { HeroFlowStatuses } from "@/components/hero/HeroFlow";
-import { useOnchainPortfolio, type PerSafeSnapshot } from "@/lib/hooks/use-onchain-portfolio";
+import { mainnet } from "wagmi/chains";
 
 function useEarnDemoSignerAddress(): `0x${string}` | null {
   return useSyncExternalStore(

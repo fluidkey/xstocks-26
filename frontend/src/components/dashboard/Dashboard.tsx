@@ -1,19 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useOnchainPortfolio } from "@/lib/hooks/use-onchain-portfolio";
-import { useVaultApyDisplay } from "@/lib/hooks/use-vault-apy-display";
-import { useXstocksPrices } from "@/lib/hooks/use-xstocks-prices";
-import type { VaultApyDisplay } from "@/lib/hooks/use-vault-apy-display";
-import {
-  getTeslaPriceUsd,
-  getVaultAprFromPrices,
-} from "@/lib/xstocks-prices";
+import { AppTopMenu, type AppTopSection } from "@/components/layout/AppTopMenu";
+import { getEnv } from "@/lib/env";
 import { useAutoBootstrap } from "@/lib/hooks/use-auto-bootstrap";
 import { useEarnFlow } from "@/lib/hooks/use-earn-flow";
+import { useOnchainPortfolio } from "@/lib/hooks/use-onchain-portfolio";
 import { useOwnFlow } from "@/lib/hooks/use-own-flow";
-import { getEnv } from "@/lib/env";
-import { AppTopMenu, type AppTopSection } from "@/components/layout/AppTopMenu";
+import type { VaultApyDisplay } from "@/lib/hooks/use-vault-apy-display";
+import { useVaultApyDisplay } from "@/lib/hooks/use-vault-apy-display";
+import { useXstocksPrices } from "@/lib/hooks/use-xstocks-prices";
+import {
+    getTeslaPriceUsd,
+    getVaultAprFromPrices,
+} from "@/lib/xstocks-prices";
+import { useMemo, useState } from "react";
 import { EarnPanel } from "./EarnPanel";
 import { OwnPanel } from "./OwnPanel";
 
