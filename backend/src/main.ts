@@ -201,6 +201,9 @@ export class XStocksBackendStack extends Stack {
       functionName: 'xstocks-execute-auto-earn',
       timeout: Duration.minutes(5),
       memorySize: 512,
+      environment: {
+        PRICES_BUCKET: pricesBucket.bucketName,
+      },
       logGroup: new aws_logs.LogGroup(this, 'ExecuteAutoEarnLogGroup', {
         removalPolicy: RemovalPolicy.DESTROY,
         retention: aws_logs.RetentionDays.ONE_WEEK,
@@ -208,12 +211,14 @@ export class XStocksBackendStack extends Stack {
     });
 
     userAddressTable.grantReadWriteData(executeAutoEarn);
+    pricesBucket.grantRead(executeAutoEarn);
 
     executeAutoEarn.addToRolePolicy(new aws_iam.PolicyStatement({
       actions: ['ssm:GetParameter'],
       resources: [
         `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/relayer`,
         `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/alchemy-api-key`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/module-authorized-relayer`,
       ],
     }));
 

@@ -1,17 +1,12 @@
 import { createHmac } from 'crypto';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
-import { DynamoDBDocument } from '@aws-sdk/lib-dynamodb';
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { hexToBigInt } from 'viem';
+import { dynamo } from '../_utils/dynamo-client';
 import { AlchemyWebhookEvent } from './types';
 
 const ssm = new SSMClient({});
-const dynamo = DynamoDBDocument.from(new DynamoDBClient({}), {
-  marshallOptions: { convertEmptyValues: false, removeUndefinedValues: true, convertClassInstanceToMap: false },
-  unmarshallOptions: { wrapNumbers: false },
-});
 const lambdaClient = new LambdaClient({});
 let cachedSigningKeys: string[] | undefined;
 

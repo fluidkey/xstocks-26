@@ -1,10 +1,4 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocument } from '@aws-sdk/lib-dynamodb';
-
-const dynamo = DynamoDBDocument.from(new DynamoDBClient({}), {
-  marshallOptions: { convertEmptyValues: false, removeUndefinedValues: true, convertClassInstanceToMap: false },
-  unmarshallOptions: { wrapNumbers: false },
-});
+import { dynamo } from '../_utils/dynamo-client';
 
 export async function handler(event: {
   pathParameters?: Record<string, string | undefined>;
