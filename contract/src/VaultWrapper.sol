@@ -10,18 +10,18 @@ import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 
 /// @title VaultWrapper
 /// @notice Non-transferable ERC-4626 wrapper around an underlying ERC-4626 vault.
-///         Charges a percentage fee on yield by minting new wrapper shares to an
-///         immutable fee collector address, diluting existing holders proportionally.
+///         Charges an annualized percentage fee on total assets under management
+///         by minting new wrapper shares to an immutable fee collector address,
+///         diluting existing holders proportionally over time.
 ///
 /// @dev Fee mechanism overview:
 ///
-///      1. `lastTotalAssets` is a checkpoint of the wrapper's total asset value at
-///         the last state-changing operation. Any growth of `totalAssets()` beyond
-///         this checkpoint is considered yield.
+///      1. `lastFeeTimestamp` records when fees were last snapshotted. Any time
+///         elapsed since then accrues fees on the current `totalAssets()`.
 ///
 ///      2. `pendingFeeShares()` computes — in real-time — how many shares the fee
-///         collector would receive for yield accrued since the last checkpoint.
-///         This is a pure view function; it never writes state.
+///         collector would receive for the time-weighted fee accrued since the
+///         last snapshot. This is a pure view function; it never writes state.
 ///
 ///      3. `totalSupply()` is overridden to include `accruedFeeShares` (snapshotted
 ///         but not yet minted) plus `pendingFeeShares()` (live). This ensures that
@@ -31,18 +31,35 @@ import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 ///      4. `collectFees()` is a standalone permissionless function that mints all
 ///         accrued + pending fee shares to the fee collector in one transaction.
 ///         Deposits and withdrawals do NOT call it — they only snapshot pending
-///         fees into `accruedFeeShares` and bump the checkpoint.
+///         fees into `accruedFeeShares` and bump the timestamp.
 ///
-///      5. On every deposit/withdraw/redeem/mint, two checkpoint updates happen:
-///         - BEFORE share math: snapshot pending fees and set `lastTotalAssets` to
-///           current value. This zeroes out `pendingFeeShares()` so the share
-///           conversion math doesn't double-count fees already in `accruedFeeShares`.
-///         - AFTER the underlying vault interaction: set `lastTotalAssets` again to
-///           the new value (which now includes the deposited/withdrawn amount) so
-///           the new money isn't mistaken for yield on the next fee calculation.
+///      5. On every deposit/withdraw/redeem/mint, `_snapshotFees()` is called
+///         BEFORE share math: it captures pending fees into `accruedFeeShares`
+///         and resets `lastFeeTimestamp` to `block.timestamp` so the conversion
+///         math doesn't double-count fees.
+///
+///      Gas optimization: mutative functions cache `totalAssets()` in transient
+///      storage (EIP-1153, Cancun) via `_snapshotFees()`. Subsequent calls to
+///      `totalAssets()` within the same transaction return the cached value,
+///      avoiding redundant external calls to the underlying vault. The cache
+///      auto-clears at the end of the transaction.
 contract VaultWrapper is ERC20 {
     using SafeERC20 for IERC20;
     using Math for uint256;
+
+    // ──────────────────────────────────────────────────────────────
+    // Constants
+    // ──────────────────────────────────────────────────────────────
+
+    /// @notice Seconds in a 365-day year, used to prorate the annualized fee.
+    uint256 public constant SECONDS_PER_YEAR = 365 days;
+
+    /// @dev Transient storage slot for caching totalAssets() during mutative calls.
+    ///      Stores `totalAssets + 1` so that 0 means "not cached" (since a cached
+    ///      value of 0 assets would be stored as 1). Auto-clears at end of tx.
+    ///      Slot chosen as keccak256("VaultWrapper.cachedTotalAssets") to avoid collisions.
+    bytes32 private constant _CACHED_TOTAL_ASSETS_SLOT =
+        0x02d1d826be667104648b9dd907405290c974559794727bef8517394599f5e50d;
 
     // ──────────────────────────────────────────────────────────────
     // Errors
@@ -85,7 +102,7 @@ contract VaultWrapper is ERC20 {
     /// @notice The asset token (same as underlying.asset()).
     IERC20 public immutable asset;
 
-    /// @notice Fee in basis points applied to yield (e.g. 100 = 1%, max 5000 = 50%).
+    /// @notice Annualized fee in basis points applied to total assets (e.g. 100 = 1%, max 5000 = 50%).
     uint256 public immutable feePercentage;
 
     /// @notice Address that receives fee shares — set once at deploy, never changes.
@@ -95,9 +112,9 @@ contract VaultWrapper is ERC20 {
     // Storage
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Checkpoint of totalAssets() at the last state-changing operation.
-    ///         Growth beyond this value is treated as yield subject to fees.
-    uint256 public lastTotalAssets;
+    /// @notice Timestamp of the last fee snapshot. Time elapsed since this value
+    ///         determines how much of the annualized fee has accrued.
+    uint256 public lastFeeTimestamp;
 
     /// @notice Fee shares that have been snapshotted from pending calculations
     ///         but not yet minted to the fee collector. Accumulated across
@@ -115,7 +132,7 @@ contract VaultWrapper is ERC20 {
 
     /// @notice Deploy a new wrapper for the given underlying vault, fee tier, and collector.
     /// @param _underlying     Address of the underlying ERC-4626 vault.
-    /// @param _feePercentage  Fee in basis points applied to yield (1–5000).
+    /// @param _feePercentage  Annualized fee in basis points applied to total assets (1–5000).
     /// @param _feeCollector   Address that receives fee shares.
     constructor(
         address _underlying,
@@ -129,6 +146,9 @@ contract VaultWrapper is ERC20 {
         asset = IERC20(IERC4626(_underlying).asset());
         feePercentage = _feePercentage;
         feeCollector = _feeCollector;
+
+        // Start the fee clock at deployment
+        lastFeeTimestamp = block.timestamp;
 
         // Offset scales with wrapper decimals (min 18) for strong inflation protection.
         // For USDC (6 decimals): offset = 1e18, not 1e6.
@@ -167,8 +187,8 @@ contract VaultWrapper is ERC20 {
     // Virtual Supply (includes unminted fee shares)
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Fee shares owed from yield accrued since the last checkpoint.
-    ///         Computed in real-time so all view functions reflect fees smoothly.
+    /// @notice Fee shares owed from the annualized fee on total assets, prorated
+    ///         by the time elapsed since the last snapshot.
     /// @dev Uses `super.totalSupply() + accruedFeeShares` as the base supply
     ///      instead of `totalSupply()` to avoid circular dependency — since
     ///      `totalSupply()` itself calls this function.
@@ -176,12 +196,17 @@ contract VaultWrapper is ERC20 {
     ///         collectFees() were called right now (for the pending portion only).
     function pendingFeeShares() public view returns (uint256) {
         uint256 current = totalAssets();
+        if (current == 0) return 0;
 
-        // No yield if assets haven't grown past the checkpoint
-        if (current <= lastTotalAssets) return 0;
+        uint256 elapsed = block.timestamp - lastFeeTimestamp;
+        if (elapsed == 0) return 0;
 
-        uint256 yieldAmount = current - lastTotalAssets;
-        uint256 feeAssets = yieldAmount.mulDiv(feePercentage, 10000, Math.Rounding.Floor);
+        // Prorate the annualized fee: feeAssets = totalAssets * feePercentage / 10000 * elapsed / SECONDS_PER_YEAR
+        uint256 feeAssets = current.mulDiv(
+            feePercentage * elapsed,
+            10000 * SECONDS_PER_YEAR,
+            Math.Rounding.Floor
+        );
         if (feeAssets == 0) return 0;
 
         // Base supply = actually minted shares + previously accrued (not yet minted) shares.
@@ -215,11 +240,37 @@ contract VaultWrapper is ERC20 {
     // ──────────────────────────────────────────────────────────────
 
     /// @notice Total asset value held in the underlying vault.
-    /// @dev Raw gross value — fee deduction happens via supply dilution, not here.
+    /// @dev During mutative calls, returns a cached value from transient storage
+    ///      to avoid redundant external calls. View calls always hit the vault.
     function totalAssets() public view returns (uint256) {
+        // Check transient cache first — avoids repeated external calls within a tx
+        uint256 cached;
+        bytes32 slot = _CACHED_TOTAL_ASSETS_SLOT;
+        assembly { cached := tload(slot) }
+        if (cached != 0) return cached - 1;
+
+        return _fetchTotalAssets();
+    }
+
+    /// @dev Fetches totalAssets from the underlying vault (2 external calls).
+    ///      Separated so _snapshotFees can call it directly and cache the result.
+    function _fetchTotalAssets() internal view returns (uint256) {
         uint256 bal = underlying.balanceOf(address(this));
         if (bal == 0) return 0;
         return underlying.convertToAssets(bal);
+    }
+
+    /// @dev Write a totalAssets value into transient storage cache.
+    ///      Stores value + 1 so that 0 means "not cached".
+    function _cacheTotalAssets(uint256 value) internal {
+        bytes32 slot = _CACHED_TOTAL_ASSETS_SLOT;
+        assembly { tstore(slot, add(value, 1)) }
+    }
+
+    /// @dev Clear the transient storage cache.
+    function _clearCache() internal {
+        bytes32 slot = _CACHED_TOTAL_ASSETS_SLOT;
+        assembly { tstore(slot, 0) }
     }
 
     /// @notice Convert an asset amount to wrapper shares at the current post-fee rate.
@@ -302,16 +353,22 @@ contract VaultWrapper is ERC20 {
 
     /// @notice Mint all accrued + pending fee shares to the fee collector.
     /// @dev Permissionless — anyone can call. Shares always go to feeCollector.
-    ///      Resets accruedFeeShares to zero and bumps the checkpoint so future
-    ///      yield measurement starts fresh from the current totalAssets().
+    ///      Resets accruedFeeShares to zero and bumps the timestamp so future
+    ///      fee accrual starts fresh from now.
     function collectFees() external {
+        // Cache totalAssets for the duration of this call
+        _cacheTotalAssets(_fetchTotalAssets());
+
         uint256 pending = pendingFeeShares();
         uint256 toMint = accruedFeeShares + pending;
 
-        // Reset accrued and bump checkpoint regardless of whether we mint,
+        // Reset accrued and bump timestamp regardless of whether we mint,
         // so the next pendingFeeShares() calculation starts clean
         accruedFeeShares = 0;
-        lastTotalAssets = totalAssets();
+        lastFeeTimestamp = block.timestamp;
+
+        // Clear cache before any external interaction
+        _clearCache();
 
         if (toMint == 0) return;
 
@@ -324,20 +381,26 @@ contract VaultWrapper is ERC20 {
     // ──────────────────────────────────────────────────────────────
 
     /// @dev Snapshot pending fee shares into accruedFeeShares and reset the
-    ///      checkpoint. Must be called at the start of every mutative function
+    ///      timestamp. Must be called at the start of every mutative function
     ///      BEFORE any share conversion math.
     ///
-    ///      Two things happen here:
-    ///      1. `accruedFeeShares += pendingFeeShares()` — captures fees owed from
-    ///         yield since the last checkpoint so they aren't lost when we move
-    ///         the checkpoint forward.
-    ///      2. `lastTotalAssets = totalAssets()` — resets the checkpoint so that
+    ///      Three things happen here:
+    ///      1. Fetch totalAssets once and cache it in transient storage so all
+    ///         subsequent calls to totalAssets() within this tx are free.
+    ///      2. `accruedFeeShares += pendingFeeShares()` — captures time-weighted
+    ///         fees owed since the last snapshot so they aren't lost when we
+    ///         reset the timestamp.
+    ///      3. `lastFeeTimestamp = block.timestamp` — resets the clock so that
     ///         `pendingFeeShares()` returns 0 for the remainder of this call.
     ///         Without this, totalSupply() would double-count: the fees would
     ///         appear in both `accruedFeeShares` AND `pendingFeeShares()`.
     function _snapshotFees() internal {
+        // Fetch once from the underlying vault and cache for the rest of the tx
+        uint256 currentAssets = _fetchTotalAssets();
+        _cacheTotalAssets(currentAssets);
+
         accruedFeeShares += pendingFeeShares();
-        lastTotalAssets = totalAssets();
+        lastFeeTimestamp = block.timestamp;
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -355,16 +418,14 @@ contract VaultWrapper is ERC20 {
         shares = convertToShares(assets);
         if (shares == 0) revert ZeroShares();
 
+        // Clear cache before external interactions that change totalAssets
+        _clearCache();
+
         asset.safeTransferFrom(msg.sender, address(this), assets);
         SafeERC20.forceApprove(asset, address(underlying), assets);
         underlying.deposit(assets, address(this));
 
         _mint(receiver, shares);
-
-        // Second checkpoint bump: totalAssets() now includes the new deposit.
-        // Without this, the deposited amount would be seen as "yield" on the
-        // next pendingFeeShares() call and incorrectly charged a fee.
-        lastTotalAssets = totalAssets();
     }
 
     /// @notice Mint exact wrapper shares by depositing the required assets.
@@ -383,14 +444,14 @@ contract VaultWrapper is ERC20 {
         );
         if (assets == 0) revert ZeroAssets();
 
+        // Clear cache before external interactions that change totalAssets
+        _clearCache();
+
         asset.safeTransferFrom(msg.sender, address(this), assets);
         SafeERC20.forceApprove(asset, address(underlying), assets);
         underlying.deposit(assets, address(this));
 
         _mint(receiver, shares);
-
-        // Bump checkpoint so new assets aren't counted as yield
-        lastTotalAssets = totalAssets();
     }
 
     /// @notice Redeem wrapper shares for underlying assets.
@@ -409,11 +470,11 @@ contract VaultWrapper is ERC20 {
         assets = convertToAssets(shares);
         if (assets == 0) revert ZeroAssets();
 
+        // Clear cache before external interactions that change totalAssets
+        _clearCache();
+
         _burn(owner, shares);
         underlying.withdraw(assets, receiver, address(this));
-
-        // Bump checkpoint so the withdrawn amount isn't seen as negative yield
-        lastTotalAssets = totalAssets();
     }
 
     /// @notice Withdraw exact assets by burning the required wrapper shares.
@@ -437,10 +498,10 @@ contract VaultWrapper is ERC20 {
         if (shares == 0) revert ZeroShares();
         if (balanceOf(owner) < shares) revert InsufficientBalance();
 
+        // Clear cache before external interactions that change totalAssets
+        _clearCache();
+
         _burn(owner, shares);
         underlying.withdraw(assets, receiver, address(this));
-
-        // Bump checkpoint so the withdrawn amount isn't seen as negative yield
-        lastTotalAssets = totalAssets();
     }
 }
