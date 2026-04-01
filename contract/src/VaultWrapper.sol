@@ -127,9 +127,11 @@ contract VaultWrapper is ERC20 {
         feePercentage = _feePercentage;
         feeCollector = _feeCollector;
 
-        // Offset scales with asset decimals so protection is proportional
-        // to the token's precision (e.g. 1e18 for DAI, 1e6 for USDC)
-        _virtualShareOffset = 10 ** uint256(IERC20Metadata(IERC4626(_underlying).asset()).decimals());
+        // Offset scales with wrapper decimals (min 18) for strong inflation protection.
+        // For USDC (6 decimals): offset = 1e18, not 1e6.
+        uint8 assetDecimals = IERC20Metadata(IERC4626(_underlying).asset()).decimals();
+        uint8 wrapperDecimals = assetDecimals > 18 ? assetDecimals : 18;
+        _virtualShareOffset = 10 ** uint256(wrapperDecimals);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -151,9 +153,11 @@ contract VaultWrapper is ERC20 {
         revert ApprovalsDisabled();
     }
 
-    /// @notice Decimals match the underlying asset for consistent UX.
+    /// @notice Decimals are floored at 18 for precision and inflation protection.
+    ///         If the underlying asset has more than 18 decimals, we use that instead.
     function decimals() public view override returns (uint8) {
-        return IERC20Metadata(address(asset)).decimals();
+        uint8 assetDecimals = IERC20Metadata(address(asset)).decimals();
+        return assetDecimals > 18 ? assetDecimals : 18;
     }
 
     // ──────────────────────────────────────────────────────────────
