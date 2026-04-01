@@ -1,149 +1,123 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { useStealthAccounts } from "@/lib/demo/stealth-accounts-context";
+import { useMemo, useState } from "react";
 import { useOnchainPortfolio } from "@/lib/hooks/use-onchain-portfolio";
 import { useVaultApyDisplay } from "@/lib/hooks/use-vault-apy-display";
-import { useAutoBootstrap } from "@/lib/hooks/use-auto-bootstrap";
+import { useXstocksPrices } from "@/lib/hooks/use-xstocks-prices";
+import type { VaultApyDisplay } from "@/lib/hooks/use-vault-apy-display";
 import {
-  getSigningAccount,
-  getStoredDemoPrivateKey,
-} from "@/lib/demo/local-account";
-import { generateStealthSafeForNonce } from "@/lib/stealth/generate-stealth-safe";
-import { registerStealthAccount } from "@/lib/api/client";
+  getTeslaPriceUsd,
+  getVaultAprFromPrices,
+} from "@/lib/xstocks-prices";
+import { useAutoBootstrap } from "@/lib/hooks/use-auto-bootstrap";
+import { useEarnFlow } from "@/lib/hooks/use-earn-flow";
+import { useOwnFlow } from "@/lib/hooks/use-own-flow";
 import { getEnv } from "@/lib/env";
-import { EarningStrip } from "./EarningStrip";
-import { DepositCard } from "./DepositCard";
-import { RoutingCard } from "./RoutingCard";
-import { Separator } from "@/components/ui/separator";
+import { AppTopMenu, type AppTopSection } from "@/components/layout/AppTopMenu";
+import { EarnPanel } from "./EarnPanel";
+import { OwnPanel } from "./OwnPanel";
 
-const rotatedVaultCycleIds = new Set<string>();
-
-function nextNonceFromAccounts(
-  accounts: { nonce: string }[],
-): bigint {
-  let max = -1n;
-  for (const a of accounts) {
-    try {
-      const n = BigInt(a.nonce);
-      if (n > max) max = n;
-    } catch {
-      /* ignore */
-    }
-  }
-  return max < 0n ? 0n : max + 1n;
+function chainLabelFromId(chainId: number): string {
+  if (chainId === 1) return "Ethereum";
+  return `Chain ${chainId}`;
 }
 
 export function Dashboard() {
   useAutoBootstrap();
-  const { accounts, activeAccount, addAccount } = useStealthAccounts();
+  const earnFlow = useEarnFlow();
+  const ownFlow = useOwnFlow();
+  const [section, setSection] = useState<AppTopSection>("earn");
+  const envChainId = getEnv().chainId;
 
-  const safes = useMemo(
-    () => accounts.map((a) => a.stealthSafeAddress),
-    [accounts],
+  const safes = useMemo(() => {
+    const list: `0x${string}`[] = [];
+    if (earnFlow.earnSafeAddress) list.push(earnFlow.earnSafeAddress);
+    if (ownFlow.ownSafeAddress) list.push(ownFlow.ownSafeAddress as `0x${string}`);
+    return list;
+  }, [earnFlow.earnSafeAddress, ownFlow.ownSafeAddress]);
+
+  const { vaultTotals } = useOnchainPortfolio(safes);
+  const morphoApyQuery = useVaultApyDisplay();
+  const pricesQuery = useXstocksPrices();
+
+  const tslaxPriceUsd = useMemo(
+    () => getTeslaPriceUsd(pricesQuery.data),
+    [pricesQuery.data],
   );
-  const { perSafe, aggregated, vaultTotals } = useOnchainPortfolio(safes);
-  const apyQuery = useVaultApyDisplay();
 
-  const activeSnap = useMemo(() => {
-    if (!activeAccount) return undefined;
-    return perSafe.find(
-      (p) =>
-        p.safe.toLowerCase() === activeAccount.stealthSafeAddress.toLowerCase(),
+  const earnApyDisplay: VaultApyDisplay | undefined = useMemo(() => {
+    const fromFeed = getVaultAprFromPrices(
+      pricesQuery.data,
+      getEnv().morphoVaultAddress,
     );
-  }, [perSafe, activeAccount]);
-
-  const depositConfirmed =
-    activeSnap?.ausdBalance != null && activeSnap.ausdBalance > 0n;
-  const routingDone =
-    activeSnap?.underlyingFromShares != null &&
-    activeSnap.underlyingFromShares > 0n;
-  const routingInProgress = depositConfirmed && !routingDone;
-
-  useEffect(() => {
-    if (!activeAccount || !routingDone) return;
-    if (rotatedVaultCycleIds.has(activeAccount.id)) return;
-    rotatedVaultCycleIds.add(activeAccount.id);
-
-    const pk = getStoredDemoPrivateKey();
-    const signer = getSigningAccount();
-    if (!pk || !signer) {
-      rotatedVaultCycleIds.delete(activeAccount.id);
-      return;
+    if (fromFeed != null) {
+      return {
+        apyDecimal: fromFeed,
+        rewardApyDecimal: null,
+        source: "prices",
+        error: false,
+      };
     }
+    return morphoApyQuery.data;
+  }, [pricesQuery.data, morphoApyQuery.data]);
 
-    void (async () => {
-      try {
-        const nonce = nextNonceFromAccounts(accounts);
-        const env = getEnv();
-        const gen = await generateStealthSafeForNonce({
-          userPrivateKey: pk,
-          userPin: env.demoFluidkeyPin,
-          userAddress: signer.address,
-          nonce,
-        });
-
-        addAccount(
-          {
-            label: "Stealth",
-            stealthSafeAddress: gen.stealthSafeAddress,
-            stealthOwnerAddresses: gen.stealthOwnerAddresses,
-            nonce: gen.nonce.toString(),
-            stealthPrivateKey: gen.stealthPrivateKey,
-          },
-          { setAsActive: true },
-        );
-
-        try {
-          await registerStealthAccount({
-            stealthSafeAddress: gen.stealthSafeAddress,
-            stealthOwnerAddresses: gen.stealthOwnerAddresses,
-            demoSignerAddress: signer.address,
-            nonce: gen.nonce.toString(),
-          });
-        } catch {
-          /* optional */
-        }
-      } catch {
-        rotatedVaultCycleIds.delete(activeAccount.id);
-      }
-    })();
-  }, [
-    routingDone,
-    activeAccount?.id,
-    activeAccount,
-    accounts,
-    addAccount,
-  ]);
+  const earnApyLoading =
+    earnApyDisplay?.apyDecimal == null &&
+    (pricesQuery.isPending || morphoApyQuery.isPending);
 
   return (
     <div className="relative min-h-full selection:bg-primary/15">
+      <AppTopMenu value={section} onValueChange={setSection} />
       <div
-        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,oklch(0.92_0.06_175/0.35),transparent)]"
-        aria-hidden
-      />
-      <div className="mx-auto flex w-full max-w-lg flex-col gap-8 px-4 py-12 sm:px-6 sm:py-16">
-        <header className="space-y-1">
-          <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            xStocks auto-earn
-          </h1>
-          <Separator className="mt-6 max-w-12 rounded-full bg-primary/40" />
-        </header>
-
-        <EarningStrip
-          vaultAssetsSum={aggregated.vaultAssetsSum}
-          ausdDecimals={vaultTotals.ausdDecimals}
-          apy={apyQuery.data}
-          apyLoading={apyQuery.isLoading}
-        />
-
-        <div className="flex flex-col gap-5">
-          <DepositCard
-            address={activeAccount?.stealthSafeAddress ?? null}
-            depositConfirmed={depositConfirmed}
+        className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10 pb-16 sm:px-6 sm:py-14"
+      >
+        {section === "own" ? (
+          <OwnPanel
+            headerTslaxQtyWei={ownFlow.headerTslaxQtyWei}
+            headerTslaxQtyDecimals={ownFlow.headerTslaxQtyDecimals}
+            vaultUnderlyingWei={
+              ownFlow.ownSnap?.underlyingFromShares ?? 0n
+            }
+            ausdBalanceWei={ownFlow.ownSnap?.ausdBalance ?? 0n}
+            ausdDecimals={vaultTotals.ausdDecimals}
+            tslaxPriceUsd={tslaxPriceUsd}
+            tslaxPriceLoading={pricesQuery.isPending}
+            sendFromBank={ownFlow.sendFromBank}
+            buyTslax={ownFlow.buyTslax}
+            teslaDecimals={ownFlow.teslaMeta.decimals}
+            bankAmountRaw={ownFlow.bankAmountRaw}
+            tslaxAmountRaw={ownFlow.tslaxAmountRaw}
+            bankTxHash={ownFlow.bankTxHash}
+            tslaxTxHash={ownFlow.tslaxTxHash}
+            relayDepositAddress={ownFlow.relayDepositAddress}
+            chainLabel={chainLabelFromId(envChainId)}
           />
-          <RoutingCard inProgress={routingInProgress} done={routingDone} />
-        </div>
+        ) : (
+          <EarnPanel
+            heroLive={earnFlow.heroLive}
+            vaultAssetsSum={earnFlow.vaultAssetsSum}
+            earnBalanceHeaderDecimals={earnFlow.earnBalanceHeaderDecimals}
+            ausdDecimals={earnFlow.ausdDecimals}
+            apy={earnApyDisplay}
+            apyLoading={
+              earnApyLoading || earnFlow.portfolioLoading || earnFlow.registerLoading
+            }
+            ausdBalanceWei={earnFlow.earnSnap?.ausdBalance ?? 0n}
+            vaultUnderlyingWei={
+              earnFlow.earnSnap?.underlyingFromShares ?? 0n
+            }
+            relayDepositAddress={earnFlow.relayDepositAddress}
+            chainLabel={chainLabelFromId(envChainId)}
+            usdcAmountRaw={earnFlow.usdcAmountRaw}
+            bankTxHash={earnFlow.bankTxHash}
+            convertTxHash={earnFlow.convertTxHash}
+            convertAmountRaw={earnFlow.convertAmountRaw}
+            earnTxHash={earnFlow.earnTxHash}
+            earnYieldAmountRaw={earnFlow.earnYieldAmountRaw}
+            registerError={earnFlow.registerError}
+            usdcPollError={earnFlow.usdcPollError}
+          />
+        )}
       </div>
     </div>
   );

@@ -4,10 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { getEnv } from "@/lib/env";
 
 export type VaultApyDisplay = {
-  /** Morpho `avgNetApy` only (0.0421 = 4.21% after UI formatting) */
+  /**
+   * Rate used by `formatApyPercent`: Morpho `avgNetApy` as decimal (0.0421 → 4.21%),
+   * or prices feed `aprCumulated` as percent points (6.67 → 6.67%).
+   */
   apyDecimal: number | null;
   rewardApyDecimal: number | null;
-  source: "morpho" | null;
+  source: "morpho" | "prices" | null;
   error: boolean;
 };
 

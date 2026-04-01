@@ -92,6 +92,94 @@
   --radius-4xl: calc(var(--radius) * 2.5);
 }
 
+/* Hero flow: connectors, step glow, illustration pop */
+@keyframes hero-flow-connector {
+  from {
+    transform: scaleX(0.22);
+    opacity: 0.55;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+@keyframes hero-flow-ping-soft {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.12;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes hero-flow-pop {
+  from {
+    transform: scale(0.94);
+    opacity: 0.65;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes hero-flow-earn-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.hero-flow-connector-fill {
+  transform-origin: left center;
+  transform: scaleX(0.2);
+  opacity: 0.4;
+}
+
+.hero-flow-connector-fill--on {
+  animation: hero-flow-connector 1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.hero-flow-ping {
+  animation: hero-flow-ping-soft 2.6s ease-in-out infinite;
+}
+
+.hero-flow-svg-pop {
+  animation: hero-flow-pop 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hero-flow-earn-processing .hero-flow-earn-dot {
+  animation: hero-flow-earn-dot 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-flow-connector-fill--on {
+    animation: none;
+    transform: scaleX(1);
+    opacity: 1;
+  }
+
+  .hero-flow-ping {
+    animation: none;
+    opacity: 0.2;
+  }
+
+  .hero-flow-svg-pop {
+    animation: none;
+  }
+
+  .hero-flow-earn-processing .hero-flow-earn-dot {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -99,9 +187,17 @@
   html {
     @apply font-sans antialiased;
     color-scheme: light;
+    background-color: var(--background);
   }
   body {
     @apply bg-background text-foreground;
+    background-image: radial-gradient(
+      ellipse 80% 50% at 50% -20%,
+      oklch(0.92 0.06 175 / 0.35),
+      transparent
+    );
+    background-attachment: fixed;
+    background-repeat: no-repeat;
     font-feature-settings:
       "ss01" 1,
       "cv01" 1;

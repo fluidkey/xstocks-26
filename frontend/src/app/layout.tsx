@@ -3,6 +3,7 @@ import { Work_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { cn } from "@/lib/utils";
+import { ralewaySemibold } from "@/lib/fonts";
 
 const workSans = Work_Sans({
   variable: "--font-work-sans",
@@ -17,7 +18,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "xStocks auto-earn",
-  description: "Auto-earn demo: stealth Safes and Morpho vault.",
+  description: "Auto-earn demo: backend Safes, relays, and Morpho vault.",
 };
 
 export default function RootLayout({
@@ -28,7 +29,12 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("h-full", workSans.variable, geistMono.variable)}
+      className={cn(
+        "h-full",
+        ralewaySemibold.variable,
+        workSans.variable,
+        geistMono.variable,
+      )}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground antialiased">
         <Providers>{children}</Providers>

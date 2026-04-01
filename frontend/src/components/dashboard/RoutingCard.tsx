@@ -84,7 +84,7 @@ export function RoutingCard({ inProgress, done }: Props) {
             ? "Funds are earning in the vault. Your next deposit address is ready below."
             : inProgress
               ? "Moving your deposit into the strategy vault…"
-              : "Starts once we see AUSD on your stealth Safe."}
+              : "Starts once we see AUSD on your Safe."}
         </p>
       </CardContent>
     </Card>

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { formatUnits } from "viem";
+import { mainnet } from "wagmi/chains";
 import { useReadContracts } from "wagmi";
 import type { UseReadContractsReturnType } from "wagmi";
 import { erc20Abi } from "@/lib/contracts/erc20";
@@ -34,6 +35,8 @@ function resultBigint(row: ReadRow | undefined): bigint | null {
 
 export function useOnchainPortfolio(safes: `0x${string}`[]) {
   const env = getEnv();
+  /** Wagmi config only registers mainnet; `NEXT_PUBLIC_CHAIN_ID` must match for reads to work. */
+  const readChainId = mainnet.id;
 
   const firstContracts = useMemo(() => {
     if (!env.ausdAddress || !env.morphoVaultAddress || safes.length === 0) {
@@ -41,21 +44,21 @@ export function useOnchainPortfolio(safes: `0x${string}`[]) {
     }
     return [
       {
-        chainId: env.chainId,
+        chainId: readChainId,
         address: env.ausdAddress,
         abi: erc20Abi,
         functionName: "decimals" as const,
       },
       ...safes.flatMap((safe) => [
         {
-          chainId: env.chainId,
+          chainId: readChainId,
           address: env.ausdAddress,
           abi: erc20Abi,
           functionName: "balanceOf" as const,
           args: [safe] as const,
         },
         {
-          chainId: env.chainId,
+          chainId: readChainId,
           address: env.morphoVaultAddress,
           abi: erc4626Abi,
           functionName: "balanceOf" as const,
@@ -63,19 +66,19 @@ export function useOnchainPortfolio(safes: `0x${string}`[]) {
         },
       ]),
       {
-        chainId: env.chainId,
+        chainId: readChainId,
         address: env.morphoVaultAddress,
         abi: erc4626Abi,
         functionName: "totalAssets" as const,
       },
       {
-        chainId: env.chainId,
+        chainId: readChainId,
         address: env.morphoVaultAddress,
         abi: erc4626Abi,
         functionName: "totalSupply" as const,
       },
     ];
-  }, [safes, env.ausdAddress, env.morphoVaultAddress, env.chainId]);
+  }, [safes, env.ausdAddress, env.morphoVaultAddress, readChainId]);
 
   const q1 = useReadContracts({
     contracts: firstContracts,
@@ -131,19 +134,14 @@ export function useOnchainPortfolio(safes: `0x${string}`[]) {
     return safes.map((_, i) => {
       const shares = perSafeAusdAndShares[i]?.shares ?? 0n;
       return {
-        chainId: env.chainId,
+        chainId: readChainId,
         address: env.morphoVaultAddress,
         abi: erc4626Abi,
         functionName: "convertToAssets" as const,
         args: [shares] as const,
       };
     });
-  }, [
-    safes,
-    env.morphoVaultAddress,
-    env.chainId,
-    perSafeAusdAndShares,
-  ]);
+  }, [safes, env.morphoVaultAddress, readChainId, perSafeAusdAndShares]);
 
   const q2 = useReadContracts({
     contracts: convertContracts,

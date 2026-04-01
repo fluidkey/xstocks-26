@@ -6,10 +6,13 @@
 export type AppEnv = {
   chainId: number;
   rpcUrl: string | undefined;
+  /** xStocks backend (migrate OpenAPI e.g. …/v1). */
+  xstocksApiUrl: string;
+  usdcAddress: `0x${string}` | undefined;
   ausdAddress: `0x${string}` | undefined;
   morphoVaultAddress: `0x${string}` | undefined;
   morphoGraphqlUrl: string;
-  /** PIN for `generateFluidkeyMessage` in auto-generated stealth flow (demo only). */
+  /** Legacy demo env field (unused after removing client stealth generation). */
   demoFluidkeyPin: string;
   backendUrl: string | undefined;
   withdrawBatchAddress: `0x${string}` | undefined;
@@ -31,6 +34,14 @@ export function getEnv(): AppEnv {
   return {
     chainId,
     rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || undefined,
+    xstocksApiUrl:
+      process.env.NEXT_PUBLIC_XSTOCKS_API_URL?.replace(/\/$/, "") ??
+      "https://5o381m93aa.execute-api.eu-west-1.amazonaws.com/v1",
+    usdcAddress:
+      parseHexAddress(process.env.NEXT_PUBLIC_USDC_ADDRESS) ??
+      (chainId === 1
+        ? ("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" as `0x${string}`)
+        : undefined),
     ausdAddress: parseHexAddress(process.env.NEXT_PUBLIC_AUSD_ADDRESS),
     morphoVaultAddress: parseHexAddress(
       process.env.NEXT_PUBLIC_MORPHO_VAULT_ADDRESS ??
