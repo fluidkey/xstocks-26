@@ -1,13 +1,15 @@
 import assert from 'assert';
 import { getMultiSendDeployment } from '@safe-global/safe-deployments';
-import { AbiItem, createPublicClient, createWalletClient, encodeFunctionData, erc20Abi, http } from 'viem';
+import { AbiItem, createPublicClient, createWalletClient, encodeAbiParameters, encodeFunctionData, erc20Abi, http, keccak256 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
 import { AUTO_EARN_ABI, AUTO_EARN_MODULE_ADDRESS } from '../_utils/addresses-and-abis';
 import { dynamo } from '../_utils/dynamo-client';
+import { findVaultProof, loadMerkleTree } from '../_utils/merkle-tree-reader';
 import { encodeMultisend } from '../_utils/multicall-encoder';
 import { initPredictedSafe } from '../_utils/safe-init';
 import { getParam } from '../_utils/ssm-params';
+import { TOKEN_TO_VAULT } from '../_utils/vault-config';
 import { ExecuteAutoEarnRequest } from './types';
 
 export async function handler(event: ExecuteAutoEarnRequest) {
@@ -26,10 +28,11 @@ export async function handler(event: ExecuteAutoEarnRequest) {
   const record = queryResult.Items?.[0];
   if (!record) throw new Error(`No stealth safe found at ${safeAddress}`);
 
-  // 2. Read secrets from SSM
-  const [relayerPrivateKey, alchemyApiKey] = await Promise.all([
+  // 2. Read secrets from SSM (tx relayer sends the tx, module relayer signs the autoDeposit authorization)
+  const [relayerPrivateKey, alchemyApiKey, moduleRelayerPrivateKey] = await Promise.all([
     getParam('/xstocks/relayer'),
     getParam('/xstocks/alchemy-api-key'),
+    getParam('/xstocks/module-authorized-relayer'),
   ]);
   const relayerAccount = privateKeyToAccount(relayerPrivateKey as `0x${string}`);
   const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
@@ -37,7 +40,6 @@ export async function handler(event: ExecuteAutoEarnRequest) {
   const transport = http(providerUrl);
   const publicClient = createPublicClient({ chain: mainnet, transport });
   const walletClient = createWalletClient({ chain: mainnet, transport, account: relayerAccount });
-  /*
   // 3. Check the token balance on the stealth safe
   const balance = await publicClient.readContract({
     abi: erc20Abi,
@@ -52,7 +54,6 @@ export async function handler(event: ExecuteAutoEarnRequest) {
   }
 
   console.log(`Token balance: ${balance.toString()}`);
-  */
   // 4. Build the list of txs to batch
   const txs: Array<{ to: `0x${string}`; data: `0x${string}`; value: bigint }> = [];
   // 4a. If safe is not deployed yet, add the deployment tx
@@ -74,22 +75,76 @@ export async function handler(event: ExecuteAutoEarnRequest) {
       value: BigInt(deploymentTx.value),
     });
   }
-  console.log(txs);
-  // 4b. Add the autoDeposit call
-  // TODO: underlyingVault, feePercentage, nonce, signature, merkleProof need to be provided
-  /*
+  // 4b. Look up which vault this token maps to
+  const vaultMapping = TOKEN_TO_VAULT.find(
+    (m) => m.tokenAddress.toLowerCase() === tokenAddress.toLowerCase(),
+  );
+  if (!vaultMapping) {
+    console.log(`No vault mapping for token ${tokenAddress}, skipping`);
+    return { status: 'NO_VAULT_MAPPING' };
+  }
+
+  // 4c. Load merkle tree from S3 and find the proof for this vault
+  const merkleTree = await loadMerkleTree();
+  const proofEntry = findVaultProof(merkleTree, vaultMapping.chainId, vaultMapping.vaultAddress, vaultMapping.feePercentage);
+  if (!proofEntry) {
+    throw new Error(`No merkle proof found for vault ${vaultMapping.vaultAddress} on chain ${vaultMapping.chainId} with fee ${vaultMapping.feePercentage}`);
+  }
+
+  // 4d. Build the authorized relayer signature for the autoDeposit call
+  const moduleRelayerAccount = privateKeyToAccount(moduleRelayerPrivateKey as `0x${string}`);
+
+  // Random nonce for replay protection — matches the contract's executedHashes tracking
+  const nonce = BigInt('0x' + crypto.randomUUID().replace(/-/g, ''));
+
+  // Replicate the contract's _buildDepositMessageHash:
+  // keccak256(abi.encode("deposit", chainId, token, amount, underlyingVault, feePercentage, feeCollector, safe, nonce))
+  const messageHash = keccak256(
+    encodeAbiParameters(
+      [
+        { type: 'string' },
+        { type: 'uint256' },
+        { type: 'address' },
+        { type: 'uint256' },
+        { type: 'address' },
+        { type: 'uint256' },
+        { type: 'address' },
+        { type: 'address' },
+        { type: 'uint256' },
+      ],
+      [
+        'deposit',
+        BigInt(1), // chainId — mainnet
+        tokenAddress as `0x${string}`,
+        balance,
+        proofEntry.underlyingVault as `0x${string}`,
+        BigInt(proofEntry.feePercentage),
+        proofEntry.feeCollector as `0x${string}`,
+        safeAddress as `0x${string}`,
+        nonce,
+      ],
+    ),
+  );
+
+  // EIP-191 personal sign — the contract uses toEthSignedMessageHash + ECDSA.recover
+  const moduleSignature = await moduleRelayerAccount.signMessage({ message: { raw: messageHash } });
+
+  // 4e. Encode the autoDeposit call with the signed authorization
   const autoDepositCalldata = encodeFunctionData({
     abi: AUTO_EARN_ABI,
     functionName: 'autoDeposit',
     args: [
-      tokenAddress as `0x${string}`, // token
-      balance, // amount
-      '0x0000000000000000000000000000000000000000' as `0x${string}`, // TODO: underlyingVault
-      BigInt(0), // TODO: feePercentage
-      safeAddress as `0x${string}`, // safe
-      BigInt(0), // TODO: nonce
-      '0x' as `0x${string}`, // TODO: signature
-      [], // TODO: merkleProof
+      tokenAddress as `0x${string}`,
+      balance,
+      {
+        underlyingVault: proofEntry.underlyingVault as `0x${string}`,
+        feePercentage: BigInt(proofEntry.feePercentage),
+        feeCollector: proofEntry.feeCollector as `0x${string}`,
+      },
+      safeAddress as `0x${string}`,
+      nonce,
+      moduleSignature,
+      proofEntry.proof as `0x${string}`[],
     ],
   });
 
@@ -98,7 +153,6 @@ export async function handler(event: ExecuteAutoEarnRequest) {
     data: autoDepositCalldata,
     value: BigInt(0),
   });
-  */
   // 5. If multiple txs, batch via MultiSend; otherwise send directly
   let txTo: `0x${string}`;
   let txData: `0x${string}`;
