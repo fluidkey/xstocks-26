@@ -160,6 +160,8 @@ export function EarnTimeline({
   if (convertDone) rows.push("convert");
   if (earnDone) rows.push("earn");
 
+  const displayRows = [...rows].reverse();
+
   return (
     <div
       className={cn(
@@ -169,10 +171,13 @@ export function EarnTimeline({
     >
       <div
         className="flex w-full min-w-0 flex-col gap-0"
-        aria-label="Earn timeline"
+        aria-label="Earn timeline (most recent first)"
       >
-        {rows.map((key, i) => (
-          <TimelineMilestoneRow key={key} isLast={i === rows.length - 1}>
+        {displayRows.map((key, i) => (
+          <TimelineMilestoneRow
+            key={key}
+            isLast={i === displayRows.length - 1}
+          >
             {key === "funding" ? (
               relayDepositAddress ? (
                 <div className="flex w-full min-w-0 flex-col gap-0">

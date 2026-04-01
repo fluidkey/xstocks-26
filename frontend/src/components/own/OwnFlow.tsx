@@ -291,6 +291,8 @@ function OwnTimeline({
   if (bankDone) rows.push("bank");
   if (tslaxDone) rows.push("tslax");
 
+  const displayRows = [...rows].reverse();
+
   return (
     <div
       className={cn(
@@ -300,10 +302,13 @@ function OwnTimeline({
     >
       <div
         className="flex w-full min-w-0 flex-col gap-0"
-        aria-label="Funding timeline"
+        aria-label="Funding timeline (most recent first)"
       >
-        {rows.map((key, i) => (
-          <TimelineMilestoneRow key={key} isLast={i === rows.length - 1}>
+        {displayRows.map((key, i) => (
+          <TimelineMilestoneRow
+            key={key}
+            isLast={i === displayRows.length - 1}
+          >
             {key === "sepa" ? (
               relayDepositAddress ? (
                 <div className="flex w-full min-w-0 flex-col gap-0">
