@@ -1,5 +1,6 @@
-import { App, aws_apigateway, aws_dynamodb, aws_events, aws_events_targets, aws_iam, aws_logs, aws_s3, CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
+import { App, aws_apigateway, aws_dynamodb, aws_events, aws_events_targets, aws_iam, aws_logs, aws_s3, aws_sqs, CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { AlchemyWebhookListenerFunction } from './lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener-function';
@@ -197,7 +198,16 @@ export class XStocksBackendStack extends Stack {
       description: 'xStocks API URL',
     });
 
-    // --- Execute Auto Earn Lambda (async invocation) ---
+    // --- TX Relay FIFO Queue (ensures serial execution for shared relayer nonce) ---
+    const txRelayQueue = new aws_sqs.Queue(this, 'TxRelayQueue', {
+      queueName: 'xstocks-tx-relay.fifo',
+      fifo: true,
+      visibilityTimeout: Duration.minutes(6), // slightly longer than lambda timeout
+      retentionPeriod: Duration.days(1),
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    // --- Execute Auto Earn Lambda (triggered by SQS FIFO, max concurrency 1) ---
     const executeAutoEarn = new ExecuteAutoEarnFunction(this, 'ExecuteAutoEarn', {
       functionName: 'xstocks-execute-auto-earn',
       timeout: Duration.minutes(5),
@@ -211,6 +221,11 @@ export class XStocksBackendStack extends Stack {
       }),
     });
 
+    executeAutoEarn.addEventSource(new SqsEventSource(txRelayQueue, {
+      batchSize: 1,
+      maxConcurrency: 2, // minimum allowed by SQS FIFO, but MessageGroupId ensures serial per group
+    }));
+
     userAddressTable.grantReadWriteData(executeAutoEarn);
     pricesBucket.grantRead(executeAutoEarn);
 
@@ -223,8 +238,9 @@ export class XStocksBackendStack extends Stack {
       ],
     }));
 
-    // Allow webhook listener to invoke execute-auto-earn async
-    executeAutoEarn.grantInvoke(alchemyWebhookListener);
+    // Allow webhook listener to send messages to the queue
+    txRelayQueue.grantSendMessages(alchemyWebhookListener);
+    alchemyWebhookListener.addEnvironment('TX_RELAY_QUEUE_URL', txRelayQueue.queueUrl);
   }
 }
 
