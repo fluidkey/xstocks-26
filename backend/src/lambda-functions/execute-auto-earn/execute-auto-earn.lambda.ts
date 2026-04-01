@@ -1,28 +1,14 @@
 import assert from 'assert';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
-import { DynamoDBDocument } from '@aws-sdk/lib-dynamodb';
 import Safe from '@safe-global/protocol-kit';
 import { getMultiSendDeployment } from '@safe-global/safe-deployments';
 import { AbiItem, createPublicClient, createWalletClient, encodeFunctionData, erc20Abi, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
+import { AUTO_EARN_ABI, AUTO_EARN_MODULE_ADDRESS } from '../_utils/addresses-and-abis';
+import { dynamo } from '../_utils/dynamo-client';
+import { encodeMultisend } from '../_utils/multicall-encoder';
+import { getParam } from '../_utils/ssm-params';
 import { ExecuteAutoEarnRequest } from './types';
-import { AUTO_EARN_ABI, AUTO_EARN_MODULE_ADDRESS } from '../create-stealth-safe/addresses-and-abis';
-import { encodeMultisend } from '../create-stealth-safe/multicall-encoder';
-
-const ssm = new SSMClient({});
-const dynamo = DynamoDBDocument.from(new DynamoDBClient({}), {
-  marshallOptions: { convertEmptyValues: false, removeUndefinedValues: true, convertClassInstanceToMap: false },
-  unmarshallOptions: { wrapNumbers: false },
-});
-
-async function getParam(name: string): Promise<string> {
-  const result = await ssm.send(new GetParameterCommand({ Name: name, WithDecryption: true }));
-  const value = result.Parameter?.Value;
-  if (!value) throw new Error(`SSM parameter ${name} not found`);
-  return value;
-}
 
 export async function handler(event: ExecuteAutoEarnRequest) {
   const { safeAddress, tokenAddress } = event;

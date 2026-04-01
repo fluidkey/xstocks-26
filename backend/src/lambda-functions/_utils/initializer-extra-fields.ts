@@ -12,11 +12,12 @@ import { encodeMultisend } from './multicall-encoder';
 
 /**
  * Returns the initializer extra fields to enable the AutoEarn module during safe deployment.
+ * Used both at address-prediction time and at actual deployment time.
  */
 export const getInitializerExtraFields = (): { to: `0x${string}`; data: `0x${string}` } => {
   const encodedTxs = encodeMultisend([
     {
-      operation: 1, // DELEGATE_CALL
+      operation: 1, // DELEGATE_CALL to enable the module on the safe
       to: SAFE_MODULE_DEPLOYER_ADDR,
       value: BigInt(0),
       data: encodeFunctionData({
@@ -26,7 +27,7 @@ export const getInitializerExtraFields = (): { to: `0x${string}`; data: `0x${str
       }),
     },
     {
-      operation: 0, // CALL
+      operation: 0, // CALL to initialize the module with the config hash
       to: AUTO_EARN_MODULE_ADDRESS,
       value: BigInt(0),
       data: encodeFunctionData({

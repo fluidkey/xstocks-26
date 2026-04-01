@@ -1,7 +1,9 @@
 import { concat, pad, toHex } from 'viem';
 
+/** Single transaction in a MultiSend batch */
 interface MultisendTx {
-  operation: number; // 0 = CALL, 1 = DELEGATECALL
+  /** 0 = CALL, 1 = DELEGATECALL */
+  operation: number;
   to: `0x${string}`;
   value: bigint;
   data: `0x${string}`;
