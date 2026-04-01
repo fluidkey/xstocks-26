@@ -21,6 +21,7 @@ const project = new awscdk.AwsCdkTypeScriptApp({
   },
   eslint: true,
   deps: [
+    '@aws-sdk/client-lambda@3.1020.0',
     '@aws-sdk/client-ssm@3.1020.0',
     '@aws-sdk/client-s3@3.1020.0',
     '@aws-sdk/client-dynamodb@3.1020.0',
@@ -28,6 +29,8 @@ const project = new awscdk.AwsCdkTypeScriptApp({
     'lambda-local@2.2.0',
     'viem@2.47.6',
     'aws-lambda@1.0.7',
+    '@safe-global/protocol-kit',
+    '@safe-global/safe-deployments',
   ],
   devDeps: [
     '@types/aws-lambda@8.10.161',

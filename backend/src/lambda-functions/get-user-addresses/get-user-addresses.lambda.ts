@@ -1,7 +1,10 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocument } from '@aws-sdk/lib-dynamodb';
 
-const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const dynamo = DynamoDBDocument.from(new DynamoDBClient({}), {
+  marshallOptions: { convertEmptyValues: false, removeUndefinedValues: true, convertClassInstanceToMap: false },
+  unmarshallOptions: { wrapNumbers: false },
+});
 
 export async function handler(event: {
   pathParameters?: Record<string, string | undefined>;
@@ -15,11 +18,11 @@ export async function handler(event: {
     };
   }
 
-  const result = await dynamo.send(new QueryCommand({
+  const result = await dynamo.query({
     TableName: 'xstocks-user-address',
     KeyConditionExpression: 'idUser = :idUser',
     ExpressionAttributeValues: { ':idUser': idUser },
-  }));
+  });
 
   const data = (result.Items ?? []).map(item => ({
     address: item.address,

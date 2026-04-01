@@ -1,14 +1,21 @@
 import { createHmac } from 'crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocument } from '@aws-sdk/lib-dynamodb';
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { hexToBigInt } from 'viem';
 import { AlchemyWebhookEvent } from './types';
 
 const ssm = new SSMClient({});
-const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const dynamo = DynamoDBDocument.from(new DynamoDBClient({}), {
+  marshallOptions: { convertEmptyValues: false, removeUndefinedValues: true, convertClassInstanceToMap: false },
+  unmarshallOptions: { wrapNumbers: false },
+});
+const lambdaClient = new LambdaClient({});
 let cachedSigningKeys: string[] | undefined;
+
+const AUTO_EARN_TOKEN_ADDRESS = '0x00000000efe302beaa2b3e6e1b18d08d69a9012a';
 
 async function getSigningKeys(): Promise<string[]> {
   if (cachedSigningKeys) return cachedSigningKeys;
@@ -82,7 +89,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     type: string;
     direction: string;
   }) {
-    await dynamo.send(new PutCommand({
+    await dynamo.put({
       TableName: tableName,
       Item: {
         address: params.trackedAddress.toLowerCase(),
@@ -97,7 +104,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         type: params.type,
         direction: params.direction,
       },
-    }));
+    });
   }
 
   const writes: Promise<void>[] = [];
@@ -210,6 +217,46 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
   await Promise.all(writes);
   console.log(`Wrote ${writes.length} transaction records`);
+
+  // --- Trigger execute-auto-earn for ERC-20 IN transfers of the tracked token ---
+  const autoEarnInvocations: Promise<unknown>[] = [];
+  if (block.logs?.length) {
+    for (const log of block.logs) {
+      const tokenContract = log.account.address.toLowerCase();
+      if (tokenContract !== AUTO_EARN_TOKEN_ADDRESS) continue;
+
+      const topicTo = log.topics[2] ? ('0x' + log.topics[2].slice(26)).toLowerCase() : null;
+      if (!topicTo) continue;
+
+      // Check if topicTo is one of our tracked stealth safes
+      const gsiResult = await dynamo.query({
+        TableName: 'xstocks-user-address',
+        IndexName: 'address-index',
+        KeyConditionExpression: 'address = :address',
+        ExpressionAttributeValues: { ':address': topicTo },
+        Limit: 1,
+      });
+
+      if (!gsiResult.Items?.length) continue;
+
+      console.log(`Triggering execute-auto-earn for safe ${topicTo}, token ${tokenContract}`);
+      autoEarnInvocations.push(
+        lambdaClient.send(new InvokeCommand({
+          FunctionName: 'xstocks-execute-auto-earn',
+          InvocationType: 'Event', // async
+          Payload: Buffer.from(JSON.stringify({
+            safeAddress: topicTo,
+            tokenAddress: tokenContract,
+          })),
+        })),
+      );
+    }
+  }
+
+  if (autoEarnInvocations.length > 0) {
+    await Promise.all(autoEarnInvocations);
+    console.log(`Triggered ${autoEarnInvocations.length} execute-auto-earn invocations`);
+  }
 
   return { statusCode: 200, body: 'OK' };
 }

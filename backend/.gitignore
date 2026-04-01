@@ -52,8 +52,9 @@ junit.xml
 /cdk.out/
 .cdk.staging/
 .parcel-cache/
-!/src/lambda-functions/add-address/add-address-function.ts
 !/src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener-function.ts
+!/src/lambda-functions/create-stealth-safe/create-stealth-safe-function.ts
+!/src/lambda-functions/execute-auto-earn/execute-auto-earn-function.ts
 !/src/lambda-functions/fetch-prices/fetch-prices-function.ts
 !/src/lambda-functions/get-address-transactions/get-address-transactions-function.ts
 !/src/lambda-functions/get-user-addresses/get-user-addresses-function.ts

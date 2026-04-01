@@ -81,6 +81,11 @@
       "type": "runtime"
     },
     {
+      "name": "@aws-sdk/client-lambda",
+      "version": "3.1020.0",
+      "type": "runtime"
+    },
+    {
       "name": "@aws-sdk/client-s3",
       "version": "3.1020.0",
       "type": "runtime"
@@ -93,6 +98,14 @@
     {
       "name": "@aws-sdk/lib-dynamodb",
       "version": "3.1020.0",
+      "type": "runtime"
+    },
+    {
+      "name": "@safe-global/protocol-kit",
+      "type": "runtime"
+    },
+    {
+      "name": "@safe-global/safe-deployments",
       "type": "runtime"
     },
     {

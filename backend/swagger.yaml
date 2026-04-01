@@ -10,21 +10,21 @@ servers:
 paths:
   /address:
     post:
-      summary: Add a new tracked address
-      operationId: addAddress
+      summary: Create a new stealth safe and track its address
+      operationId: createStealthSafe
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddAddressRequest'
+              $ref: '#/components/schemas/CreateStealthSafeRequest'
       responses:
         '200':
-          description: Address added successfully
+          description: Stealth safe created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AddAddressResponse'
+                $ref: '#/components/schemas/CreateStealthSafeResponse'
         '400':
           description: Invalid request
           content:
@@ -94,28 +94,36 @@ paths:
 
 components:
   schemas:
-    AddAddressRequest:
+    CreateStealthSafeRequest:
       type: object
       required:
         - idUser
-        - address
+        - ownerAddress
       properties:
         idUser:
           type: string
           example: "user-123"
-        address:
+        ownerAddress:
           type: string
+          description: The owner address for the stealth safe
           example: "0x90A2a4c76b5D8c0bc892A69EA28Aa775a8f2dD48"
 
-    AddAddressResponse:
+    CreateStealthSafeResponse:
       type: object
       properties:
-        message:
+        safeAddress:
           type: string
-          example: "Address added"
-        address:
+          description: The predicted stealth safe address
+          example: "0x1234567890abcdef1234567890abcdef12345678"
+        ownerAddress:
           type: string
           example: "0x90A2a4c76b5D8c0bc892A69EA28Aa775a8f2dD48"
+        deploymentStatus:
+          type: string
+          enum:
+            - NONE
+            - DEPLOYED
+          example: "NONE"
 
     UserAddress:
       type: object

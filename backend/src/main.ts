@@ -1,9 +1,10 @@
-import { App, aws_apigateway, aws_dynamodb, aws_events, aws_events_targets, aws_logs, aws_s3, CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
+import { App, aws_apigateway, aws_dynamodb, aws_events, aws_events_targets, aws_iam, aws_logs, aws_s3, CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
-import { AddAddressFunction } from './lambda-functions/add-address/add-address-function';
 import { AlchemyWebhookListenerFunction } from './lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener-function';
+import { CreateStealthSafeFunction } from './lambda-functions/create-stealth-safe/create-stealth-safe-function';
+import { ExecuteAutoEarnFunction } from './lambda-functions/execute-auto-earn/execute-auto-earn-function';
 import { FetchPricesFunction } from './lambda-functions/fetch-prices/fetch-prices-function';
 import { GetAddressTransactionsFunction } from './lambda-functions/get-address-transactions/get-address-transactions-function';
 import { GetUserAddressesFunction } from './lambda-functions/get-user-addresses/get-user-addresses-function';
@@ -19,6 +20,11 @@ export class XStocksBackendStack extends Stack {
       sortKey: { name: 'address', type: aws_dynamodb.AttributeType.STRING },
       billingMode: aws_dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    userAddressTable.addGlobalSecondaryIndex({
+      indexName: 'address-index',
+      partitionKey: { name: 'address', type: aws_dynamodb.AttributeType.STRING },
     });
 
     const addressTransactionTable = new aws_dynamodb.Table(this, 'AddressTransactionTable', {
@@ -49,6 +55,7 @@ export class XStocksBackendStack extends Stack {
 
     alchemySigningKeys.grantRead(alchemyWebhookListener);
     addressTransactionTable.grantWriteData(alchemyWebhookListener);
+    userAddressTable.grantReadData(alchemyWebhookListener);
 
     const fnUrl = alchemyWebhookListener.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,
@@ -58,28 +65,6 @@ export class XStocksBackendStack extends Stack {
       value: fnUrl.url,
       description: 'Alchemy webhook listener URL',
     });
-
-    // --- Add Address Lambda ---
-    const alchemyAuthToken = ssm.StringParameter.fromStringParameterName(
-      this, 'AlchemyAuthToken', '/xstocks/alchemy-auth-token',
-    );
-
-    const addAddress = new AddAddressFunction(this, 'AddAddress', {
-      environment: {
-        ALCHEMY_AUTH_TOKEN_PARAM: alchemyAuthToken.parameterName,
-      },
-      logGroup: new aws_logs.LogGroup(
-        this,
-        'AddAddressLogGroup',
-        {
-          removalPolicy: RemovalPolicy.DESTROY,
-          retention: aws_logs.RetentionDays.ONE_WEEK,
-        },
-      ),
-    });
-
-    alchemyAuthToken.grantRead(addAddress);
-    userAddressTable.grantWriteData(addAddress);
 
     // --- Fetch Prices Lambda (every 10 minutes) ---
     const pricesBucket = new aws_s3.Bucket(this, 'PricesBucket', {
@@ -135,6 +120,27 @@ export class XStocksBackendStack extends Stack {
     });
     addressTransactionTable.grantReadData(getAddressTransactions);
 
+    // --- Create Stealth Safe Lambda ---
+    const createStealthSafe = new CreateStealthSafeFunction(this, 'CreateStealthSafe', {
+      timeout: Duration.minutes(5),
+      memorySize: 512,
+      logGroup: new aws_logs.LogGroup(this, 'CreateStealthSafeLogGroup', {
+        removalPolicy: RemovalPolicy.DESTROY,
+        retention: aws_logs.RetentionDays.ONE_WEEK,
+      }),
+    });
+
+    userAddressTable.grantWriteData(createStealthSafe);
+
+    createStealthSafe.addToRolePolicy(new aws_iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/relayer`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/alchemy-api-key`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/alchemy-auth-token`,
+      ],
+    }));
+
     // --- API Gateway ---
     const api = new aws_apigateway.RestApi(this, 'XStocksApi', {
       restApiName: 'xStocks API',
@@ -152,7 +158,7 @@ export class XStocksBackendStack extends Stack {
       allowMethods: ['POST', 'OPTIONS'],
       allowHeaders: ['Content-Type'],
     });
-    addressResource.addMethod('POST', new aws_apigateway.LambdaIntegration(addAddress));
+    addressResource.addMethod('POST', new aws_apigateway.LambdaIntegration(createStealthSafe));
 
     // GET /user/{id_user}/address
     const userResource = api.root.addResource('user');
@@ -179,6 +185,30 @@ export class XStocksBackendStack extends Stack {
       value: api.url,
       description: 'xStocks API URL',
     });
+
+    // --- Execute Auto Earn Lambda (async invocation) ---
+    const executeAutoEarn = new ExecuteAutoEarnFunction(this, 'ExecuteAutoEarn', {
+      functionName: 'xstocks-execute-auto-earn',
+      timeout: Duration.minutes(5),
+      memorySize: 512,
+      logGroup: new aws_logs.LogGroup(this, 'ExecuteAutoEarnLogGroup', {
+        removalPolicy: RemovalPolicy.DESTROY,
+        retention: aws_logs.RetentionDays.ONE_WEEK,
+      }),
+    });
+
+    userAddressTable.grantReadWriteData(executeAutoEarn);
+
+    executeAutoEarn.addToRolePolicy(new aws_iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/relayer`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/alchemy-api-key`,
+      ],
+    }));
+
+    // Allow webhook listener to invoke execute-auto-earn async
+    executeAutoEarn.grantInvoke(alchemyWebhookListener);
   }
 }
 

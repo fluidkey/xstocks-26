@@ -29,10 +29,13 @@
       "description": "Prepare assets",
       "steps": [
         {
-          "spawn": "bundle:lambda-functions/add-address/add-address.lambda"
+          "spawn": "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda"
         },
         {
-          "spawn": "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda"
+          "spawn": "bundle:lambda-functions/create-stealth-safe/create-stealth-safe.lambda"
+        },
+        {
+          "spawn": "bundle:lambda-functions/execute-auto-earn/execute-auto-earn.lambda"
         },
         {
           "spawn": "bundle:lambda-functions/fetch-prices/fetch-prices.lambda"
@@ -42,24 +45,6 @@
         },
         {
           "spawn": "bundle:lambda-functions/get-user-addresses/get-user-addresses.lambda"
-        }
-      ]
-    },
-    "bundle:lambda-functions/add-address/add-address.lambda": {
-      "name": "bundle:lambda-functions/add-address/add-address.lambda",
-      "description": "Create a JavaScript bundle from src/lambda-functions/add-address/add-address.lambda.ts",
-      "steps": [
-        {
-          "exec": "esbuild --bundle src/lambda-functions/add-address/add-address.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/add-address/add-address.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
-        }
-      ]
-    },
-    "bundle:lambda-functions/add-address/add-address.lambda:watch": {
-      "name": "bundle:lambda-functions/add-address/add-address.lambda:watch",
-      "description": "Continuously update the JavaScript bundle from src/lambda-functions/add-address/add-address.lambda.ts",
-      "steps": [
-        {
-          "exec": "esbuild --bundle src/lambda-functions/add-address/add-address.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/add-address/add-address.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
         }
       ]
     },
@@ -78,6 +63,42 @@
       "steps": [
         {
           "exec": "esbuild --bundle src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
+        }
+      ]
+    },
+    "bundle:lambda-functions/create-stealth-safe/create-stealth-safe.lambda": {
+      "name": "bundle:lambda-functions/create-stealth-safe/create-stealth-safe.lambda",
+      "description": "Create a JavaScript bundle from src/lambda-functions/create-stealth-safe/create-stealth-safe.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/create-stealth-safe/create-stealth-safe.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/create-stealth-safe/create-stealth-safe.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
+        }
+      ]
+    },
+    "bundle:lambda-functions/create-stealth-safe/create-stealth-safe.lambda:watch": {
+      "name": "bundle:lambda-functions/create-stealth-safe/create-stealth-safe.lambda:watch",
+      "description": "Continuously update the JavaScript bundle from src/lambda-functions/create-stealth-safe/create-stealth-safe.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/create-stealth-safe/create-stealth-safe.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/create-stealth-safe/create-stealth-safe.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
+        }
+      ]
+    },
+    "bundle:lambda-functions/execute-auto-earn/execute-auto-earn.lambda": {
+      "name": "bundle:lambda-functions/execute-auto-earn/execute-auto-earn.lambda",
+      "description": "Create a JavaScript bundle from src/lambda-functions/execute-auto-earn/execute-auto-earn.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/execute-auto-earn/execute-auto-earn.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/execute-auto-earn/execute-auto-earn.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
+        }
+      ]
+    },
+    "bundle:lambda-functions/execute-auto-earn/execute-auto-earn.lambda:watch": {
+      "name": "bundle:lambda-functions/execute-auto-earn/execute-auto-earn.lambda:watch",
+      "description": "Continuously update the JavaScript bundle from src/lambda-functions/execute-auto-earn/execute-auto-earn.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/execute-auto-earn/execute-auto-earn.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/execute-auto-earn/execute-auto-earn.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
         }
       ]
     },
@@ -333,13 +354,13 @@
       },
       "steps": [
         {
-          "exec": "yarn dlx npm-check-updates@18 --upgrade --target=minor --peer --no-deprecated --dep=dev,peer,prod,optional --filter=@types/jest,@types/node,esbuild,eslint-import-resolver-typescript,eslint-plugin-import,jest,projen,ts-jest,ts-node,typescript"
+          "exec": "yarn dlx npm-check-updates@18 --upgrade --target=minor --peer --no-deprecated --dep=dev,peer,prod,optional --filter=@types/jest,@types/node,esbuild,eslint-import-resolver-typescript,eslint-plugin-import,jest,projen,ts-jest,ts-node,typescript,@safe-global/protocol-kit,@safe-global/safe-deployments"
         },
         {
           "exec": "yarn install --no-immutable"
         },
         {
-          "exec": "yarn up @stylistic/eslint-plugin @types/aws-lambda @types/jest @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser aws-cdk esbuild eslint-import-resolver-typescript eslint-plugin-import eslint jest jest-junit projen ts-jest ts-node typescript @aws-sdk/client-dynamodb @aws-sdk/client-s3 @aws-sdk/client-ssm @aws-sdk/lib-dynamodb aws-cdk-lib aws-lambda constructs lambda-local viem"
+          "exec": "yarn up @stylistic/eslint-plugin @types/aws-lambda @types/jest @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser aws-cdk esbuild eslint-import-resolver-typescript eslint-plugin-import eslint jest jest-junit projen ts-jest ts-node typescript @aws-sdk/client-dynamodb @aws-sdk/client-lambda @aws-sdk/client-s3 @aws-sdk/client-ssm @aws-sdk/lib-dynamodb @safe-global/protocol-kit @safe-global/safe-deployments aws-cdk-lib aws-lambda constructs lambda-local viem"
         },
         {
           "exec": "npx projen"

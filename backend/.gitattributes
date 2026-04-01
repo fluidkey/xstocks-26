@@ -18,8 +18,9 @@
 /cdk.json linguist-generated
 /LICENSE linguist-generated
 /package.json linguist-generated
-/src/lambda-functions/add-address/add-address-function.ts linguist-generated
 /src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener-function.ts linguist-generated
+/src/lambda-functions/create-stealth-safe/create-stealth-safe-function.ts linguist-generated
+/src/lambda-functions/execute-auto-earn/execute-auto-earn-function.ts linguist-generated
 /src/lambda-functions/fetch-prices/fetch-prices-function.ts linguist-generated
 /src/lambda-functions/get-address-transactions/get-address-transactions-function.ts linguist-generated
 /src/lambda-functions/get-user-addresses/get-user-addresses-function.ts linguist-generated

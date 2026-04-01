@@ -180,6 +180,58 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@aws-sdk/client-lambda@npm:3.1020.0":
+  version: 3.1020.0
+  resolution: "@aws-sdk/client-lambda@npm:3.1020.0"
+  dependencies:
+    "@aws-crypto/sha256-browser": "npm:5.2.0"
+    "@aws-crypto/sha256-js": "npm:5.2.0"
+    "@aws-sdk/core": "npm:^3.973.26"
+    "@aws-sdk/credential-provider-node": "npm:^3.972.28"
+    "@aws-sdk/middleware-host-header": "npm:^3.972.8"
+    "@aws-sdk/middleware-logger": "npm:^3.972.8"
+    "@aws-sdk/middleware-recursion-detection": "npm:^3.972.9"
+    "@aws-sdk/middleware-user-agent": "npm:^3.972.27"
+    "@aws-sdk/region-config-resolver": "npm:^3.972.10"
+    "@aws-sdk/types": "npm:^3.973.6"
+    "@aws-sdk/util-endpoints": "npm:^3.996.5"
+    "@aws-sdk/util-user-agent-browser": "npm:^3.972.8"
+    "@aws-sdk/util-user-agent-node": "npm:^3.973.13"
+    "@smithy/config-resolver": "npm:^4.4.13"
+    "@smithy/core": "npm:^3.23.13"
+    "@smithy/eventstream-serde-browser": "npm:^4.2.12"
+    "@smithy/eventstream-serde-config-resolver": "npm:^4.3.12"
+    "@smithy/eventstream-serde-node": "npm:^4.2.12"
+    "@smithy/fetch-http-handler": "npm:^5.3.15"
+    "@smithy/hash-node": "npm:^4.2.12"
+    "@smithy/invalid-dependency": "npm:^4.2.12"
+    "@smithy/middleware-content-length": "npm:^4.2.12"
+    "@smithy/middleware-endpoint": "npm:^4.4.28"
+    "@smithy/middleware-retry": "npm:^4.4.45"
+    "@smithy/middleware-serde": "npm:^4.2.16"
+    "@smithy/middleware-stack": "npm:^4.2.12"
+    "@smithy/node-config-provider": "npm:^4.3.12"
+    "@smithy/node-http-handler": "npm:^4.5.1"
+    "@smithy/protocol-http": "npm:^5.3.12"
+    "@smithy/smithy-client": "npm:^4.12.8"
+    "@smithy/types": "npm:^4.13.1"
+    "@smithy/url-parser": "npm:^4.2.12"
+    "@smithy/util-base64": "npm:^4.3.2"
+    "@smithy/util-body-length-browser": "npm:^4.2.2"
+    "@smithy/util-body-length-node": "npm:^4.2.3"
+    "@smithy/util-defaults-mode-browser": "npm:^4.3.44"
+    "@smithy/util-defaults-mode-node": "npm:^4.2.48"
+    "@smithy/util-endpoints": "npm:^3.3.3"
+    "@smithy/util-middleware": "npm:^4.2.12"
+    "@smithy/util-retry": "npm:^4.2.12"
+    "@smithy/util-stream": "npm:^4.5.21"
+    "@smithy/util-utf8": "npm:^4.2.2"
+    "@smithy/util-waiter": "npm:^4.2.14"
+    tslib: "npm:^2.6.2"
+  checksum: 10c0/8db384dce27dadecc1040c353e3afcae107bc6f63b7b5813b2da9b49ef75fa00ad07ee830d023fbd5bd1f1e8773be4c46e32d1748ae6068654df11ffb1e61bf5
+  languageName: node
+  linkType: hard
+
 "@aws-sdk/client-s3@npm:3.1020.0":
   version: 3.1020.0
   resolution: "@aws-sdk/client-s3@npm:3.1020.0"
@@ -1985,7 +2037,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@noble/curves@npm:~1.9.0":
+"@noble/curves@npm:^1.6.0, @noble/curves@npm:~1.9.0":
   version: 1.9.7
   resolution: "@noble/curves@npm:1.9.7"
   dependencies:
@@ -2094,6 +2146,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@peculiar/asn1-schema@npm:^2.3.13":
+  version: 2.6.0
+  resolution: "@peculiar/asn1-schema@npm:2.6.0"
+  dependencies:
+    asn1js: "npm:^3.0.6"
+    pvtsutils: "npm:^1.3.6"
+    tslib: "npm:^2.8.1"
+  checksum: 10c0/8c283b10a2e4aca4cb20d242cde773c9a798ea15a6c221d1474ef483e182d48195aeb5dde3f7b518f236eceb7808ae4438539d41a3aa9ed6d20aa4d36a21a0c2
+  languageName: node
+  linkType: hard
+
 "@pkgjs/parseargs@npm:^0.11.0":
   version: 0.11.0
   resolution: "@pkgjs/parseargs@npm:0.11.0"
@@ -2112,6 +2175,52 @@ __metadata:
   version: 1.1.0
   resolution: "@rtsao/scc@npm:1.1.0"
   checksum: 10c0/b5bcfb0d87f7d1c1c7c0f7693f53b07866ed9fec4c34a97a8c948fb9a7c0082e416ce4d3b60beb4f5e167cbe04cdeefbf6771320f3ede059b9ce91188c409a5b
+  languageName: node
+  linkType: hard
+
+"@safe-global/protocol-kit@npm:^7.0.0":
+  version: 7.0.0
+  resolution: "@safe-global/protocol-kit@npm:7.0.0"
+  dependencies:
+    "@noble/curves": "npm:^1.6.0"
+    "@peculiar/asn1-schema": "npm:^2.3.13"
+    "@safe-global/safe-deployments": "npm:^1.37.52"
+    "@safe-global/safe-modules-deployments": "npm:^3.0.0"
+    "@safe-global/types-kit": "npm:^3.1.0"
+    abitype: "npm:^1.0.2"
+    semver: "npm:^7.7.2"
+    viem: "npm:^2.21.8"
+  dependenciesMeta:
+    "@noble/curves":
+      optional: true
+    "@peculiar/asn1-schema":
+      optional: true
+  checksum: 10c0/76bf4442e002a0c03e495c99709ad1436a267fd9ccadaf3f4da5d61937123aecb24f1df3252600fc571bf5988872b32590c7995dbc94ee97fa16fe960ddd4a6e
+  languageName: node
+  linkType: hard
+
+"@safe-global/safe-deployments@npm:^1.37.52, @safe-global/safe-deployments@npm:^1.37.53":
+  version: 1.37.53
+  resolution: "@safe-global/safe-deployments@npm:1.37.53"
+  dependencies:
+    semver: "npm:^7.6.2"
+  checksum: 10c0/d688d84b3e9986a8c4b44aa86946b6f97abd00f114ed130c41da7ad03a9d53211e52ff42742fcf3555b9540dd5f7cffff1daa141b4876ca96ccd94b34fc9cab5
+  languageName: node
+  linkType: hard
+
+"@safe-global/safe-modules-deployments@npm:^3.0.0":
+  version: 3.0.1
+  resolution: "@safe-global/safe-modules-deployments@npm:3.0.1"
+  checksum: 10c0/dd5eca55f3a2d24ec48b72877761a43ddf422742b169ceb8292473b3e9c364cfd464968bbd80c6d0dd4a8c6442aa9ccf149bfd47751ec7dcf52bb2866a536f43
+  languageName: node
+  linkType: hard
+
+"@safe-global/types-kit@npm:^3.1.0":
+  version: 3.1.0
+  resolution: "@safe-global/types-kit@npm:3.1.0"
+  dependencies:
+    abitype: "npm:^1.0.2"
+  checksum: 10c0/af044b38320821bbcb5f7f78de9ccd11235266abd3aca4979808c8a0a75d4e8cf6bb92eab77a3b8f2a75d61d72e7db98aeca5cfce8bb758fafc3f0137d69ff6a
   languageName: node
   linkType: hard
 
@@ -3254,7 +3363,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"abitype@npm:1.2.3, abitype@npm:^1.2.3":
+"abitype@npm:1.2.3, abitype@npm:^1.0.2, abitype@npm:^1.2.3":
   version: 1.2.3
   resolution: "abitype@npm:1.2.3"
   peerDependencies:
@@ -3490,6 +3599,17 @@ __metadata:
     get-intrinsic: "npm:^1.2.6"
     is-array-buffer: "npm:^3.0.4"
   checksum: 10c0/2f2459caa06ae0f7f615003f9104b01f6435cc803e11bd2a655107d52a1781dc040532dc44d93026b694cc18793993246237423e13a5337e86b43ed604932c06
+  languageName: node
+  linkType: hard
+
+"asn1js@npm:^3.0.6":
+  version: 3.0.7
+  resolution: "asn1js@npm:3.0.7"
+  dependencies:
+    pvtsutils: "npm:^1.3.6"
+    pvutils: "npm:^1.1.3"
+    tslib: "npm:^2.8.1"
+  checksum: 10c0/7e79795edf1bcc86532c4084aa7c8c0ebc57f7dd6f964ad6de956abf617329722f6964b7af3a5d1c4554dd61b4b148ae1580e63e3ec2e70e7fba34f6df072b29
   languageName: node
   linkType: hard
 
@@ -7401,6 +7521,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pvtsutils@npm:^1.3.6":
+  version: 1.3.6
+  resolution: "pvtsutils@npm:1.3.6"
+  dependencies:
+    tslib: "npm:^2.8.1"
+  checksum: 10c0/b1b42646370505ccae536dcffa662303b2c553995211330c8e39dec9ab8c197585d7751c2c5b9ab2f186feda0219d9bb23c34ee1e565573be96450f79d89a13c
+  languageName: node
+  linkType: hard
+
+"pvutils@npm:^1.1.3":
+  version: 1.1.5
+  resolution: "pvutils@npm:1.1.5"
+  checksum: 10c0/e968b07b78a58fec9377fe7aa6342c8cfa21c8fb4afc4e51e1489bd42bec6dc71b8a52541d0aede0aea17adec7ca3f89f29f56efdc31d0083cc02e9bb5721bcf
+  languageName: node
+  linkType: hard
+
 "querystring@npm:0.2.0":
   version: 0.2.0
   resolution: "querystring@npm:0.2.0"
@@ -7652,7 +7788,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"semver@npm:^7.3.5, semver@npm:^7.5.3, semver@npm:^7.5.4, semver@npm:^7.7.1, semver@npm:^7.7.2, semver@npm:^7.7.3, semver@npm:^7.7.4":
+"semver@npm:^7.3.5, semver@npm:^7.5.3, semver@npm:^7.5.4, semver@npm:^7.6.2, semver@npm:^7.7.1, semver@npm:^7.7.2, semver@npm:^7.7.3, semver@npm:^7.7.4":
   version: 7.7.4
   resolution: "semver@npm:7.7.4"
   bin:
@@ -8279,7 +8415,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tslib@npm:^2.4.0, tslib@npm:^2.6.2":
+"tslib@npm:^2.4.0, tslib@npm:^2.6.2, tslib@npm:^2.8.1":
   version: 2.8.1
   resolution: "tslib@npm:2.8.1"
   checksum: 10c0/9c4759110a19c53f992d9aae23aac5ced636e99887b51b9e61def52611732872ff7668757d4e4c61f19691e36f4da981cd9485e869b4a7408d689f6bf1f14e62
@@ -8580,7 +8716,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"viem@npm:2.47.6":
+"viem@npm:2.47.6, viem@npm:^2.21.8":
   version: 2.47.6
   resolution: "viem@npm:2.47.6"
   dependencies:
@@ -8817,9 +8953,12 @@ __metadata:
   resolution: "xStocks2026@workspace:."
   dependencies:
     "@aws-sdk/client-dynamodb": "npm:3.1020.0"
+    "@aws-sdk/client-lambda": "npm:3.1020.0"
     "@aws-sdk/client-s3": "npm:3.1020.0"
     "@aws-sdk/client-ssm": "npm:3.1020.0"
     "@aws-sdk/lib-dynamodb": "npm:3.1020.0"
+    "@safe-global/protocol-kit": "npm:^7.0.0"
+    "@safe-global/safe-deployments": "npm:^1.37.53"
     "@stylistic/eslint-plugin": "npm:^2"
     "@types/aws-lambda": "npm:8.10.161"
     "@types/jest": "npm:^30.0.0"
