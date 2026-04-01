@@ -65,7 +65,7 @@ export async function handler(sqsEvent: SQSEvent) {
     const protocolKit = await initPredictedSafe({
       providerUrl,
       signerPrivateKey: relayerPrivateKey,
-      ownerAddress: relayerAccount.address,
+      ownerAddress: record.ownerAddress,
       initializerExtraTo: record.initializerExtraTo,
       initializerExtraData: record.initializerExtraData,
       saltNonce: record.saltNonce,

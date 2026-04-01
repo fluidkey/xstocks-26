@@ -88,7 +88,7 @@ export async function handler(event: {
   const protocolKit = await initPredictedSafe({
     providerUrl,
     signerPrivateKey: relayerPrivateKey,
-    ownerAddress: relayerAccount.address,
+    ownerAddress: ownerAddress,
     initializerExtraTo: initializerExtra.to,
     initializerExtraData: initializerExtra.data,
     saltNonce: toHex(0),

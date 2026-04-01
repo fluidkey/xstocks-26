@@ -44,6 +44,8 @@ export class XStocksBackendStack extends Stack {
       environment: {
         ALCHEMY_SIGNING_KEYS_PARAM: alchemySigningKeys.parameterName,
       },
+      timeout: Duration.minutes(3),
+      memorySize: 512,
       logGroup: new aws_logs.LogGroup(
         this,
         'AlchemyWebhookListenerLogGroup',
