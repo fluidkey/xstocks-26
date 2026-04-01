@@ -1,10 +1,10 @@
+import { createHmac, randomUUID } from 'crypto';
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { createHmac, randomUUID } from 'crypto';
 import { hexToBigInt } from 'viem';
-import { dynamo } from '../_utils/dynamo-client';
 import { AlchemyWebhookEvent } from './types';
+import { dynamo } from '../_utils/dynamo-client';
 
 const ssm = new SSMClient({});
 const sqs = new SQSClient({});

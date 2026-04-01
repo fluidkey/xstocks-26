@@ -1,11 +1,11 @@
 import { getAddress, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { CreateStealthSafeRequest } from './types';
 import { CORS_HEADERS } from '../_utils/cors-headers';
 import { dynamo } from '../_utils/dynamo-client';
 import { getInitializerExtraFields } from '../_utils/initializer-extra-fields';
 import { initPredictedSafe } from '../_utils/safe-init';
 import { getParam } from '../_utils/ssm-params';
-import { CreateStealthSafeRequest } from './types';
 
 const ALCHEMY_API_URL = 'https://dashboard.alchemy.com/api/graphql/variables';
 
@@ -73,7 +73,7 @@ export async function handler(event: {
     getParam('/xstocks/alchemy-auth-token'),
     getParam('/xstocks/bridgexyz-customer-id'),
     getParam('/xstocks/bridgexyz-api-key'),
-    getParam('/xstocks/bridgexyz-virtual-account-own'),  // to convert then in TSL share
+    getParam('/xstocks/bridgexyz-virtual-account-own'), // to convert then in TSL share
     getParam('/xstocks/bridgexyz-virtual-account-earn'), // to convert then into aUSD
   ]);
 
