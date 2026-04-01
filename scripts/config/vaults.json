@@ -1,0 +1,32 @@
+{
+  "chains": [
+    {
+      "chainId": 1,
+      "vaults": [
+        {
+          "underlyingVault": "0x8eB67A509616cd6A7c1B3c8C21D48FF57df3d458",
+          "vaultName": "Gauntlet USDC Core",
+          "feePercentage": 50,
+          "feeCollector": "0x56aEd5EB340D661993d1aa4907f5E7A293eA1082"
+        },
+        {
+          "underlyingVault": "0x32401B9fb79065Bc15949DE0BD43927492f02F0C",
+          "vaultName": "Flowdesk AUSD RWA Strategy",
+          "feePercentage": 50,
+          "feeCollector": "0x56aEd5EB340D661993d1aa4907f5E7A293eA1082"
+        }
+      ]
+    },
+    {
+      "chainId": 8453,
+      "vaults": [
+        {
+          "underlyingVault": "0xc0c5689e6f4D256E861F65465b691aeEcC0dEb12",
+          "vaultName": "Gauntlet USDC Core",
+          "feePercentage": 100,
+          "feeCollector": "0x56aEd5EB340D661993d1aa4907f5E7A293eA1082"
+        }
+      ]
+    }
+  ]
+}
