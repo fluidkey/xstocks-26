@@ -31,6 +31,7 @@ const project = new awscdk.AwsCdkTypeScriptApp({
     'aws-lambda@1.0.7',
     '@safe-global/protocol-kit',
     '@safe-global/safe-deployments',
+    'bignumber.js@9.1.2',
   ],
   devDeps: [
     '@types/aws-lambda@8.10.161',
@@ -68,6 +69,11 @@ project.addTask('test:executeAutoEarn', {
 // Local test task for create-stealth-safe
 project.addTask('test:createStealthSafe', {
   exec: 'npx ts-node src/lambda-functions/create-stealth-safe/local-development/create-stealth-safe.local-test.ts',
+});
+
+// Local test task for fetch-prices
+project.addTask('test:fetchPrices', {
+  exec: 'npx ts-node src/lambda-functions/fetch-prices/local-development/fetch-prices.local-test.ts',
 });
 
 project.synth();

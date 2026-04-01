@@ -119,6 +119,11 @@
       "type": "runtime"
     },
     {
+      "name": "bignumber.js",
+      "version": "9.1.2",
+      "type": "runtime"
+    },
+    {
       "name": "constructs",
       "version": "^10.5.1",
       "type": "runtime"

@@ -61,10 +61,13 @@ export async function handler(event: {
   const { idUser, ownerAddress } = request;
 
   // 1. Read secrets from SSM
-  const [relayerPrivateKey, alchemyApiKey, alchemyAuthToken] = await Promise.all([
+  const [relayerPrivateKey, alchemyApiKey, alchemyAuthToken, bridgeCustomerId, bridgeApiKey, bridgeVirtualAccount] = await Promise.all([
     getParam('/xstocks/relayer'),
     getParam('/xstocks/alchemy-api-key'),
     getParam('/xstocks/alchemy-auth-token'),
+    getParam('/xstocks/bridgexyz-customer-id'),
+    getParam('/xstocks/bridgexyz-api-key'),
+    getParam('/xstocks/bridgexyz-virtual-account'),
   ]);
   const relayerAccount = privateKeyToAccount(relayerPrivateKey as `0x${string}`);
   const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
@@ -118,6 +121,73 @@ export async function handler(event: {
   const padded = '0x' + checksummedAddress.slice(2).toLowerCase().padStart(64, '0');
   await createVariable(alchemyAuthToken, 'trackedAddressesPadded', [padded]);
   console.log('Address tracked via Alchemy:', checksummedAddress);
+
+  // 6. Get Relay deposit address for USDC -> AUSD swap to the safe
+  const relayRes = await fetch('https://api.relay.link/quote/v2', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user: '0x0000000000000000000000000000000000000000',
+      originChainId: 1,
+      originCurrency: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // USDC
+      destinationChainId: 1,
+      destinationCurrency: '0x00000000efe302beaa2b3e6e1b18d08d69a9012a', // AUSD
+      tradeType: 'EXACT_INPUT',
+      recipient: checksummedAddress,
+      amount: '2000000', // minimum amount to get a quote
+      useDepositAddress: true,
+      usePermit: false,
+      useExternalLiquidity: false,
+      refundTo: checksummedAddress,
+    }),
+  });
+
+  if (!relayRes.ok) {
+    const relayBody = await relayRes.text();
+    console.error(`Relay API failed: ${relayRes.status} ${relayBody}`);
+    throw new Error(`Relay API failed: ${relayRes.status}`);
+  }
+
+  const relayData = await relayRes.json() as { steps: Array<{ depositAddress?: string }> };
+  const depositAddress = relayData.steps?.[0]?.depositAddress;
+  if (!depositAddress) {
+    throw new Error('No depositAddress returned from Relay API');
+  }
+  console.log('Relay deposit address:', depositAddress);
+
+  // 7. Update Bridge virtual account with the Relay deposit address
+  const bridgeRes = await fetch(
+    `https://api.bridge.xyz/v0/customers/${bridgeCustomerId}/virtual_accounts/${bridgeVirtualAccount}`,
+    {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Api-Key': bridgeApiKey,
+      },
+      body: JSON.stringify({
+        destination: {
+          currency: 'usdc',
+          payment_rail: 'ethereum',
+          address: depositAddress,
+        },
+      }),
+    },
+  );
+
+  if (!bridgeRes.ok) {
+    const bridgeBody = await bridgeRes.text();
+    console.error(`Bridge API failed: ${bridgeRes.status} ${bridgeBody}`);
+    throw new Error(`Bridge API failed: ${bridgeRes.status}`);
+  }
+  console.log('Bridge virtual account updated with deposit address:', depositAddress);
+
+  // 8. Store deposit address in DynamoDB
+  await dynamo.update({
+    TableName: 'xstocks-user-address',
+    Key: { idUser, address: safeAddress.toLowerCase() },
+    UpdateExpression: 'SET relayDepositAddress = :depositAddress',
+    ExpressionAttributeValues: { ':depositAddress': depositAddress },
+  });
 
   return {
     statusCode: 200,

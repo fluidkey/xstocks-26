@@ -33,6 +33,7 @@
     "test:alchemyWebhookListener": "npx projen test:alchemyWebhookListener",
     "test:createStealthSafe": "npx projen test:createStealthSafe",
     "test:executeAutoEarn": "npx projen test:executeAutoEarn",
+    "test:fetchPrices": "npx projen test:fetchPrices",
     "test:watch": "npx projen test:watch",
     "upgrade": "npx projen upgrade",
     "watch": "npx projen watch",
@@ -67,6 +68,7 @@
     "@safe-global/safe-deployments": "^1.37.53",
     "aws-cdk-lib": "^2.208.0",
     "aws-lambda": "1.0.7",
+    "bignumber.js": "9.1.2",
     "constructs": "^10.5.1",
     "lambda-local": "2.2.0",
     "viem": "2.47.6"
