@@ -1,10 +1,10 @@
 import { getAddress, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { CreateStealthSafeRequest } from './types';
 import { dynamo } from '../_utils/dynamo-client';
 import { getInitializerExtraFields } from '../_utils/initializer-extra-fields';
 import { initPredictedSafe } from '../_utils/safe-init';
 import { getParam } from '../_utils/ssm-params';
-import { CreateStealthSafeRequest } from './types';
 
 const ALCHEMY_API_URL = 'https://dashboard.alchemy.com/api/graphql/variables';
 
@@ -58,7 +58,15 @@ export async function handler(event: {
   const { idUser, ownerAddress } = request;
 
   // 1. Read secrets from SSM
-  const [relayerPrivateKey, alchemyApiKey, alchemyAuthToken, bridgeCustomerId, bridgeApiKey, bridgeVirtualAccountOwn, bridgeVirtualAccountEarn] = await Promise.all([
+  const [
+    relayerPrivateKey,
+    alchemyApiKey,
+    alchemyAuthToken,
+    bridgeCustomerId,
+    bridgeApiKey,
+    bridgeVirtualAccountOwn,
+    bridgeVirtualAccountEarn,
+  ] = await Promise.all([
     getParam('/xstocks/relayer'),
     getParam('/xstocks/alchemy-api-key'),
     getParam('/xstocks/alchemy-auth-token'),

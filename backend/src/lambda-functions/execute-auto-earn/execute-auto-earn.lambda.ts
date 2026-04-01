@@ -1,8 +1,10 @@
 import assert from 'assert';
 import { getMultiSendCallOnlyDeployment } from '@safe-global/safe-deployments';
+import { SQSEvent } from 'aws-lambda';
 import { AbiItem, createPublicClient, createWalletClient, encodeAbiParameters, encodeFunctionData, erc20Abi, hashMessage, http, keccak256, serializeSignature } from 'viem';
 import { privateKeyToAccount, sign } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
+import { ExecuteAutoEarnRequest } from './types';
 import { AUTO_EARN_ABI, AUTO_EARN_MODULE_ADDRESS } from '../_utils/addresses-and-abis';
 import { dynamo } from '../_utils/dynamo-client';
 import { findVaultProof, loadMerkleTree } from '../_utils/merkle-tree-reader';
@@ -10,10 +12,11 @@ import { encodeMultisend } from '../_utils/multicall-encoder';
 import { initPredictedSafe } from '../_utils/safe-init';
 import { getParam } from '../_utils/ssm-params';
 import { TOKEN_TO_VAULT } from '../_utils/vault-config';
-import { ExecuteAutoEarnRequest } from './types';
 
-export async function handler(event: ExecuteAutoEarnRequest) {
-  const { safeAddress, tokenAddress } = event;
+export async function handler(sqsEvent: SQSEvent) {
+  // Parse the SQS message body (also supports direct invocation for local testing)
+  const body = sqsEvent.Records?.[0]?.body ?? JSON.stringify(sqsEvent);
+  const { safeAddress, tokenAddress } = JSON.parse(body) as ExecuteAutoEarnRequest;
 
   // 1. Read the stealth safe record from DynamoDB via GSI
   const queryResult = await dynamo.query({
@@ -216,6 +219,19 @@ export async function handler(event: ExecuteAutoEarnRequest) {
   const signature = await walletClient.signTransaction(request);
   const txHash = await walletClient.sendRawTransaction({ serializedTransaction: signature });
   console.log('Tx hash:', txHash);
+
+  // Wait for the transaction to be mined and check status
+  const receipt = await publicClient.waitForTransactionReceipt({
+    hash: txHash,
+    timeout: 240_000, // 4 minutes
+  });
+
+  if (receipt.status === 'reverted') {
+    console.error('Transaction reverted:', txHash);
+    throw new Error(`Transaction reverted: ${txHash}`);
+  }
+
+  console.log(`Transaction confirmed in block ${receipt.blockNumber}`);
 
   // 7. Update deployment status if we deployed
   if (needsDeploy) {

@@ -1,5 +1,5 @@
-import { createHmac } from 'crypto';
-import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
+import { createHmac, randomUUID } from 'crypto';
+import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { hexToBigInt } from 'viem';
@@ -7,7 +7,7 @@ import { AlchemyWebhookEvent } from './types';
 import { dynamo } from '../_utils/dynamo-client';
 
 const ssm = new SSMClient({});
-const lambdaClient = new LambdaClient({});
+const sqs = new SQSClient({});
 let cachedSigningKeys: string[] | undefined;
 
 const AUTO_EARN_TOKEN_ADDRESS = '0x00000000efe302beaa2b3e6e1b18d08d69a9012a';
@@ -214,7 +214,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
   console.log(`Wrote ${writes.length} transaction records`);
 
   // --- Trigger execute-auto-earn for ERC-20 IN transfers of the tracked token ---
-  const autoEarnInvocations: Promise<unknown>[] = [];
+  const sqsMessages: Promise<unknown>[] = [];
   if (block.logs?.length) {
     for (const log of block.logs) {
       const tokenContract = log.account.address.toLowerCase();
@@ -234,23 +234,24 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
       if (!gsiResult.Items?.length) continue;
 
-      console.log(`Triggering execute-auto-earn for safe ${topicTo}, token ${tokenContract}`);
-      autoEarnInvocations.push(
-        lambdaClient.send(new InvokeCommand({
-          FunctionName: 'xstocks-execute-auto-earn',
-          InvocationType: 'Event', // async
-          Payload: Buffer.from(JSON.stringify({
+      console.log(`Sending SQS message for safe ${topicTo}, token ${tokenContract}`);
+      sqsMessages.push(
+        sqs.send(new SendMessageCommand({
+          QueueUrl: process.env.TX_RELAY_QUEUE_URL!,
+          MessageBody: JSON.stringify({
             safeAddress: topicTo,
             tokenAddress: tokenContract,
-          })),
+          }),
+          MessageGroupId: 'relayer',
+          MessageDeduplicationId: randomUUID(),
         })),
       );
     }
   }
 
-  if (autoEarnInvocations.length > 0) {
-    await Promise.all(autoEarnInvocations);
-    console.log(`Triggered ${autoEarnInvocations.length} execute-auto-earn invocations`);
+  if (sqsMessages.length > 0) {
+    await Promise.all(sqsMessages);
+    console.log(`Sent ${sqsMessages.length} messages to TX relay queue`);
   }
 
   return { statusCode: 200, body: 'OK' };
