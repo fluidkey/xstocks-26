@@ -3,8 +3,8 @@ import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { hexToBigInt } from 'viem';
-import { dynamo } from '../_utils/dynamo-client';
 import { AlchemyWebhookEvent } from './types';
+import { dynamo } from '../_utils/dynamo-client';
 
 const ssm = new SSMClient({});
 const lambdaClient = new LambdaClient({});

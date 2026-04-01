@@ -1,10 +1,10 @@
 import { getAddress, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { CreateStealthSafeRequest } from './types';
 import { dynamo } from '../_utils/dynamo-client';
 import { getInitializerExtraFields } from '../_utils/initializer-extra-fields';
 import { initPredictedSafe } from '../_utils/safe-init';
 import { getParam } from '../_utils/ssm-params';
-import { CreateStealthSafeRequest } from './types';
 
 const ALCHEMY_API_URL = 'https://dashboard.alchemy.com/api/graphql/variables';
 
