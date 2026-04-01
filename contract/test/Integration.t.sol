@@ -182,10 +182,14 @@ contract IntegrationTest is Test {
         uint256 yieldAmount = 10e18;
         asset.mint(address(underlyingVault), yieldAmount);
 
-        // Step 3: Collect fees — 1% of 10e18 yield = 0.1e18
-        uint256 feeCollectorBalBefore = asset.balanceOf(FEE_COLLECTOR);
+        // Step 3: Collect fees — mints fee shares to feeCollector
         wrapper.collectFees();
-        uint256 feesCollected = asset.balanceOf(FEE_COLLECTOR) - feeCollectorBalBefore;
+        uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
+        assertGt(feeShares, 0, "Fee collector must receive shares");
+
+        // Fee collector redeems shares for assets
+        vm.prank(FEE_COLLECTOR);
+        uint256 feesCollected = wrapper.redeem(feeShares, FEE_COLLECTOR, FEE_COLLECTOR);
         assertGt(feesCollected, 0, "Fee collector must receive assets");
 
         // Step 4: Withdraw all remaining shares

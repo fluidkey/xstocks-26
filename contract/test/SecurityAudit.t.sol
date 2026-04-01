@@ -135,17 +135,17 @@ contract VaultWrapperSecurityTest is Test {
         // Simulate yield
         asset.mint(address(underlyingVault), 10e18);
 
-        // First collection
-        uint256 balBefore = asset.balanceOf(FEE_COLLECTOR);
+        // First collection — feeCollector receives wrapper shares
+        uint256 sharesBefore = wrapper.balanceOf(FEE_COLLECTOR);
         wrapper.collectFees();
-        uint256 firstCollection = asset.balanceOf(FEE_COLLECTOR) - balBefore;
-        assertGt(firstCollection, 0, "First collection should yield fees");
+        uint256 firstShares = wrapper.balanceOf(FEE_COLLECTOR) - sharesBefore;
+        assertGt(firstShares, 0, "First collection should mint fee shares");
 
-        // Immediate second collection — no new yield, should yield nothing
-        uint256 balBefore2 = asset.balanceOf(FEE_COLLECTOR);
+        // Immediate second collection — no new yield, should mint nothing
+        uint256 sharesBefore2 = wrapper.balanceOf(FEE_COLLECTOR);
         wrapper.collectFees();
-        uint256 secondCollection = asset.balanceOf(FEE_COLLECTOR) - balBefore2;
-        assertEq(secondCollection, 0, "Immediate second collection must yield zero");
+        uint256 secondShares = wrapper.balanceOf(FEE_COLLECTOR) - sharesBefore2;
+        assertEq(secondShares, 0, "Immediate second collection must mint zero shares");
     }
 
     // ───────────────────────────────────────────────────────────
@@ -266,7 +266,7 @@ contract VaultWrapperSecurityTest is Test {
 
         // Should not revert
         highFeeWrapper.collectFees();
-        assertGt(asset.balanceOf(FEE_COLLECTOR), 0, "Fee collector must receive assets");
+        assertGt(highFeeWrapper.balanceOf(FEE_COLLECTOR), 0, "Fee collector must receive shares");
     }
 
     // ───────────────────────────────────────────────────────────
@@ -364,8 +364,13 @@ contract VaultWrapperSecurityTest is Test {
         asset.mint(address(underlyingVault), 100_000e18);
 
         wrapper.collectFees();
-        uint256 feesCollected = asset.balanceOf(FEE_COLLECTOR);
-        assertGt(feesCollected, 0, "Fees collected");
+        uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
+        assertGt(feeShares, 0, "Fee shares minted");
+
+        // FeeCollector redeems their shares for assets
+        vm.prank(FEE_COLLECTOR);
+        uint256 feesCollected = wrapper.redeem(feeShares, FEE_COLLECTOR, FEE_COLLECTOR);
+        assertGt(feesCollected, 0, "Fee collector got assets");
 
         uint256 shares = wrapper.balanceOf(DEPOSITOR);
         vm.prank(DEPOSITOR);

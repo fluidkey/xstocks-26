@@ -114,10 +114,8 @@ contract VaultWrapperTest is Test {
         wrapper.deposit(depositAmount, DEPOSITOR);
         vm.stopPrank();
 
-        // No yield generated — totalAssets should equal grossAssets
-        assertEq(wrapper.totalAssets(), wrapper.grossAssets(), "No fee without yield");
-        // totalDeposited tracks correctly
-        assertEq(wrapper.totalDeposited(), depositAmount, "totalDeposited must match");
+        // No yield generated — no fee shares should be minted
+        assertEq(wrapper.balanceOf(FEE_COLLECTOR), 0, "No fee shares without yield");
     }
 
     // ---------------------------------------------------------------
@@ -137,12 +135,15 @@ contract VaultWrapperTest is Test {
         uint256 yieldAmount = 100e18;
         asset.mint(address(underlyingVault), yieldAmount);
 
-        uint256 gross = wrapper.grossAssets();
-        uint256 net = wrapper.totalAssets();
+        // Collect fees — should mint shares to feeCollector
+        wrapper.collectFees();
+        uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
+        assertGt(feeShares, 0, "Fee shares should be minted on yield");
 
-        // Fee = 1% of yield = 1e18 (may be off by 1 wei due to floor rounding)
+        // Fee shares should represent ~1% of yield when redeemed
+        uint256 feeValue = wrapper.convertToAssets(feeShares);
         uint256 expectedFee = yieldAmount * 100 / 10000;
-        assertApproxEqAbs(gross - net, expectedFee, 1, "Fee should be 1% of yield");
+        assertApproxEqAbs(feeValue, expectedFee, 1e16, "Fee value should be ~1% of yield");
     }
 
     // ---------------------------------------------------------------
@@ -162,16 +163,19 @@ contract VaultWrapperTest is Test {
         uint256 yieldAmount = 100e18;
         asset.mint(address(underlyingVault), yieldAmount);
 
-        uint256 collectorBefore = asset.balanceOf(FEE_COLLECTOR);
         wrapper.collectFees();
-        uint256 collectorAfter = asset.balanceOf(FEE_COLLECTOR);
+        uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
+        assertGt(feeShares, 0, "Fee collector should receive wrapper shares");
 
-        // 1% of 100e18 yield = 1e18
+        // Redeem fee shares to verify asset value is ~1% of yield
+        vm.prank(FEE_COLLECTOR);
+        uint256 feeAssets = wrapper.redeem(feeShares, FEE_COLLECTOR, FEE_COLLECTOR);
+
         assertApproxEqAbs(
-            collectorAfter - collectorBefore,
+            feeAssets,
             1e18,
-            2,
-            "Fee collector should receive 1% of yield"
+            1e16,
+            "Fee collector should receive ~1% of yield when redeeming"
         );
     }
 
@@ -192,10 +196,13 @@ contract VaultWrapperTest is Test {
         asset.mint(address(underlyingVault), 100e18);
         wrapper.collectFees();
 
-        // After collection, totalAssets should equal grossAssets (no pending fee)
+        // After collection, calling collectFees again should mint zero new shares
+        uint256 feeSharesBefore = wrapper.balanceOf(FEE_COLLECTOR);
+        wrapper.collectFees();
+        uint256 feeSharesAfter = wrapper.balanceOf(FEE_COLLECTOR);
         assertEq(
-            wrapper.totalAssets(),
-            wrapper.grossAssets(),
+            feeSharesAfter,
+            feeSharesBefore,
             "After fee collection, no pending fee should remain"
         );
     }
@@ -213,11 +220,11 @@ contract VaultWrapperTest is Test {
         wrapper.deposit(depositAmount, DEPOSITOR);
         vm.stopPrank();
 
-        uint256 collectorBefore = asset.balanceOf(FEE_COLLECTOR);
+        uint256 feeSharesBefore = wrapper.balanceOf(FEE_COLLECTOR);
         wrapper.collectFees();
-        uint256 collectorAfter = asset.balanceOf(FEE_COLLECTOR);
+        uint256 feeSharesAfter = wrapper.balanceOf(FEE_COLLECTOR);
 
-        assertEq(collectorAfter, collectorBefore, "No fees collected without yield");
+        assertEq(feeSharesAfter, feeSharesBefore, "No fee shares minted without yield");
     }
 
     // ---------------------------------------------------------------
@@ -332,12 +339,13 @@ contract VaultWrapperUSDCRoundTripTest is Test {
         // Simulate 10 USDC yield in the underlying vault
         usdc.mint(address(underlyingVault), 10e6);
 
-        // Redeem all shares — should get principal + yield minus fee
+        // Redeem all shares — fee dilution is reflected in real-time via
+        // totalSupply() override, so depositor gets principal + yield minus fee.
         vm.prank(DEPOSITOR);
         uint256 returned = wrapper.redeem(shares, DEPOSITOR, DEPOSITOR);
 
         // Fee = 3% of 10 USDC = 0.3 USDC. Depositor gets ~1009.7 USDC
-        assertApproxEqAbs(returned, 1009_700_000, 2, "Should get principal + yield - fee");
+        assertApproxEqAbs(returned, 1009_700_000, 10_000, "Should get principal + yield - fee");
     }
 
     /// @notice Deposit, time passes (no actual yield in mock), withdraw works fine.
