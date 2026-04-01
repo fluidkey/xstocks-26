@@ -1,12 +1,15 @@
 import { getAddress, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CreateStealthSafeRequest } from './types';
 import { dynamo } from '../_utils/dynamo-client';
 import { getInitializerExtraFields } from '../_utils/initializer-extra-fields';
 import { initPredictedSafe } from '../_utils/safe-init';
 import { getParam } from '../_utils/ssm-params';
+import { CreateStealthSafeRequest } from './types';
 
 const ALCHEMY_API_URL = 'https://dashboard.alchemy.com/api/graphql/variables';
+
+const VALID_ID_USERS = ['own', 'earn'] as const;
+type ValidIdUser = typeof VALID_ID_USERS[number];
 
 async function createVariable(authToken: string, variableName: string, items: string[]) {
   const url = `${ALCHEMY_API_URL}/${variableName}`;
@@ -44,17 +47,24 @@ export async function handler(event: {
     return { statusCode: 400, body: JSON.stringify({ error: 'idUser and ownerAddress are required' }) };
   }
 
+  if (!VALID_ID_USERS.includes(request.idUser as ValidIdUser)) {
+    return { statusCode: 400, body: JSON.stringify({ error: `idUser must be one of: ${VALID_ID_USERS.join(', ')}` }) };
+  }
+
   const { idUser, ownerAddress } = request;
 
   // 1. Read secrets from SSM
-  const [relayerPrivateKey, alchemyApiKey, alchemyAuthToken, bridgeCustomerId, bridgeApiKey, bridgeVirtualAccount] = await Promise.all([
+  const [relayerPrivateKey, alchemyApiKey, alchemyAuthToken, bridgeCustomerId, bridgeApiKey, bridgeVirtualAccountOwn, bridgeVirtualAccountEarn] = await Promise.all([
     getParam('/xstocks/relayer'),
     getParam('/xstocks/alchemy-api-key'),
     getParam('/xstocks/alchemy-auth-token'),
     getParam('/xstocks/bridgexyz-customer-id'),
     getParam('/xstocks/bridgexyz-api-key'),
-    getParam('/xstocks/bridgexyz-virtual-account'),
+    getParam('/xstocks/bridgexyz-virtual-account-own'),
+    getParam('/xstocks/bridgexyz-virtual-account-earn'),
   ]);
+
+  const bridgeVirtualAccount = idUser === 'own' ? bridgeVirtualAccountOwn : bridgeVirtualAccountEarn;
   const relayerAccount = privateKeyToAccount(relayerPrivateKey as `0x${string}`);
   const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
 

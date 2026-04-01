@@ -147,7 +147,8 @@ export class XStocksBackendStack extends Stack {
         `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/alchemy-auth-token`,
         `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/bridgexyz-customer-id`,
         `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/bridgexyz-api-key`,
-        `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/bridgexyz-virtual-account`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/bridgexyz-virtual-account-own`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/bridgexyz-virtual-account-earn`,
       ],
     }));
 

@@ -11,6 +11,20 @@ paths:
   /address:
     post:
       summary: Create a new stealth safe and track its address
+      description: |
+        Creates a counterfactual Safe smart account for the given user.
+        The flow:
+        1. Predicts the safe address (not deployed yet)
+        2. Stores the safe info in DynamoDB
+        3. Registers the address with Alchemy for transaction tracking
+        4. Gets a Relay deposit address (USDC → AUSD swap routed to the safe)
+        5. Updates the Bridge virtual account with the deposit address
+
+        The safe will be deployed on-chain automatically when the first deposit is detected.
+
+        `idUser` determines which Bridge virtual account is updated:
+        - `"own"` — the ownership virtual account
+        - `"earn"` — the auto-earn virtual account
       operationId: createStealthSafe
       requestBody:
         required: true
@@ -102,27 +116,33 @@ components:
       properties:
         idUser:
           type: string
-          example: "user-123"
+          enum:
+            - own
+            - earn
+          description: The user identifier. "own" for the ownership safe, "earn" for the auto-earn safe.
+          example: "earn"
         ownerAddress:
           type: string
           description: The owner address for the stealth safe
-          example: "0x90A2a4c76b5D8c0bc892A69EA28Aa775a8f2dD48"
+          example: "0xE1934217f1adf611420576af84438e8F865078dd"
 
     CreateStealthSafeResponse:
       type: object
       properties:
         safeAddress:
           type: string
-          description: The predicted stealth safe address
+          description: The predicted stealth safe address (counterfactual, not yet deployed on-chain)
           example: "0x1234567890abcdef1234567890abcdef12345678"
         ownerAddress:
           type: string
-          example: "0x90A2a4c76b5D8c0bc892A69EA28Aa775a8f2dD48"
+          description: The owner address provided in the request
+          example: "0xE1934217f1adf611420576af84438e8F865078dd"
         deploymentStatus:
           type: string
           enum:
             - NONE
             - DEPLOYED
+          description: "NONE means the safe is predicted but not yet deployed. It will be deployed on-chain automatically when the first deposit is received."
           example: "NONE"
 
     UserAddress:
