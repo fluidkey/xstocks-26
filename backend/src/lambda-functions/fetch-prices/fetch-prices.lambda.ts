@@ -1,13 +1,16 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { createPublicClient, http, parseAbi } from 'viem';
 import { mainnet } from 'viem/chains';
 
 const s3 = new S3Client({});
+const ssm = new SSMClient({});
 
 const UNDERLYING_TOKEN = '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a';
 const TOKEN_ADDRESSES = [
   '0x90A2a4c76b5D8c0bc892A69EA28Aa775a8f2dD48',
   UNDERLYING_TOKEN,
+  '0x8aD3c73F833d3F9A523aB01476625F269aEB7Cf0', // TSLAx
 ];
 
 const CHAIN = 'ETHEREUM';
@@ -16,9 +19,12 @@ const MERKL_VAULT_ADDRESS = '0x32401B9fb79065Bc15949DE0BD43927492f02F0C';
 const MERKL_API_BASE = 'https://api.merkl.xyz/v4/opportunities';
 const VAULT_WRAPPER_TOKEN = '0x727f8c82b9c210362bee141a1f26c24ebe7beaa5';
 
-// Alchemy API key read from SSM in other lambdas, but here we hardcode the RPC
-// since fetch-prices doesn't have SSM access and this is a public read
-const ALCHEMY_RPC = 'https://eth-mainnet.g.alchemy.com/v2/dLKA3jNT503x4C6tzPeOgPrZ1YprJh-r';
+async function getParam(name: string): Promise<string> {
+  const result = await ssm.send(new GetParameterCommand({ Name: name, WithDecryption: true }));
+  const value = result.Parameter?.Value;
+  if (!value) throw new Error(`SSM parameter ${name} not found`);
+  return value;
+}
 
 const erc4626Abi = parseAbi([
   'function convertToAssets(uint256 shares) view returns (uint256)',
@@ -80,9 +86,10 @@ async function computeVaultTokenPrice(
 }
 
 export async function handler() {
+  const alchemyApiKey = await getParam('/xstocks/alchemy-api-key');
   const publicClient = createPublicClient({
     chain: mainnet,
-    transport: http(ALCHEMY_RPC),
+    transport: http(`https://eth-mainnet.g.alchemy.com/v2/${alchemyApiKey}`),
   });
 
   // Fetch token prices
@@ -163,6 +170,7 @@ export async function handler() {
     Key: 'prices.json',
     Body: JSON.stringify(prices),
     ContentType: 'application/json',
+    CacheControl: 'no-cache, no-store, must-revalidate',
   }));
 
   console.log('Prices saved:', JSON.stringify(prices));

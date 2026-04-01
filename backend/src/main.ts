@@ -92,6 +92,13 @@ export class XStocksBackendStack extends Stack {
 
     pricesBucket.grantPut(fetchPrices);
 
+    fetchPrices.addToRolePolicy(new aws_iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/xstocks/alchemy-api-key`,
+      ],
+    }));
+
     new aws_events.Rule(this, 'FetchPricesSchedule', {
       schedule: aws_events.Schedule.rate(Duration.minutes(10)),
       targets: [new aws_events_targets.LambdaFunction(fetchPrices)],
