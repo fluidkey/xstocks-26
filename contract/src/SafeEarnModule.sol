@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.30;
 
 import {Ownable} from "@openzeppelin/access/Ownable.sol";
 import {ECDSA} from "@openzeppelin/utils/cryptography/ECDSA.sol";
@@ -18,23 +18,17 @@ interface IWETH {
 /// @title SafeEarnModule
 /// @notice Safe module that enables relayer-triggered deposits and withdrawals
 ///         through VaultWrappers on behalf of Gnosis Safe smart accounts.
-/// @dev Uses merkle proofs to authorize (vault, feePercentage) pairs per Safe,
-///      ECDSA signatures for relayer authentication, and on-chain replay
+/// @dev Uses merkle proofs to authorize (vault, feePercentage, feeCollector) triples
+///      per Safe, ECDSA signatures for relayer authentication, and on-chain replay
 ///      protection via executed message hash tracking.
 contract SafeEarnModule is Ownable {
 
     // ──────────────────────────────────────────────────────────────
-    // Constants
+    // Constants & Immutables
     // ──────────────────────────────────────────────────────────────
 
     /// @notice Sentinel address representing native ETH in deposit/withdraw calls.
-    /// @dev When token == NATIVE_TOKEN the module wraps ETH → WETH before deposit.
-    address public constant NATIVE_TOKEN =
-        0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-
-    // ──────────────────────────────────────────────────────────────
-    // Immutables
-    // ──────────────────────────────────────────────────────────────
+    address public constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     /// @notice Address of the wrapped native token contract (e.g. WETH).
     address public immutable wrappedNative;
@@ -46,14 +40,13 @@ contract SafeEarnModule is Ownable {
     // Structs
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Per-Safe configuration stored when the module is installed.
-    /// @dev rootHash defines which (vault, feePercentage) pairs the Safe is
-    ///      authorized to use. feeCollector is forwarded to VaultWrapper on
-    ///      every deposit so fees accrue to the correct address.
-    struct SafeConfig {
-        /// @notice Merkle root of authorized (underlyingVault, feePercentage) pairs
-        bytes32 rootHash;
-        /// @notice Address that receives accrued fees from this Safe's deposits
+    /// @notice Bundles vault-related parameters to avoid stack-too-deep.
+    struct VaultParams {
+        /// @notice The underlying ERC-4626 vault address
+        address underlyingVault;
+        /// @notice Fee tier in basis points (1–5000)
+        uint256 feePercentage;
+        /// @notice Address that receives fees for this wrapper
         address feeCollector;
     }
 
@@ -61,8 +54,8 @@ contract SafeEarnModule is Ownable {
     // Storage
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Per-Safe configuration mapping (merkle root + fee collector).
-    mapping(address => SafeConfig) public safeConfigs;
+    /// @notice Per-Safe merkle root of authorized (underlyingVault, feePercentage, feeCollector) triples.
+    mapping(address => bytes32) public safeRootHashes;
 
     /// @notice Tracks which addresses are authorized to sign operations.
     mapping(address => bool) public authorizedRelayers;
@@ -75,25 +68,19 @@ contract SafeEarnModule is Ownable {
     // ──────────────────────────────────────────────────────────────
 
     /// @notice Thrown when the recovered signer is not an authorized relayer.
-    /// @param caller The address that was recovered from the signature.
     error NotAuthorized(address caller);
 
     /// @notice Thrown when an operation targets a Safe that hasn't installed this module.
-    /// @param account The Safe address that is not initialized.
     error ModuleNotInitialized(address account);
 
     /// @notice Thrown when onInstall is called on a Safe that is already initialized.
-    /// @param account The Safe address that is already initialized.
     error ModuleAlreadyInitialized(address account);
 
     /// @notice Thrown when the provided merkle proof does not verify against the stored root.
     error InvalidMerkleProof();
 
-    /// @notice Thrown when a zero merkle root is provided to onInstall or changeMerkleRoot.
+    /// @notice Thrown when a zero merkle root is provided.
     error InvalidMerkleRoot();
-
-    /// @notice Thrown when a zero-address fee collector is provided to onInstall.
-    error InvalidFeeCollector();
 
     /// @notice Thrown when a signature has already been used (replay attempt).
     error SignatureAlreadyUsed();
@@ -112,9 +99,6 @@ contract SafeEarnModule is Ownable {
 
     /// @notice Thrown when the deposit call via the Safe fails.
     error DepositFailed();
-
-    /// @notice Thrown when setting the fee collector on the wrapper via the Safe fails.
-    error SetFeeCollectorFailed();
 
     /// @notice Thrown when the redeem call via the Safe fails.
     error RedeemFailed();
@@ -204,9 +188,7 @@ contract SafeEarnModule is Ownable {
     /// @dev Callable by the contract owner or any existing authorized relayer.
     /// @param newRelayer Address to authorize.
     function addAuthorizedRelayer(address newRelayer) external {
-        if (msg.sender != owner() && !authorizedRelayers[msg.sender]) {
-            revert NotAuthorized(msg.sender);
-        }
+        if (msg.sender != owner() && !authorizedRelayers[msg.sender]) revert NotAuthorized(msg.sender);
         authorizedRelayers[newRelayer] = true;
         emit AddAuthorizedRelayer(newRelayer);
     }
@@ -216,9 +198,7 @@ contract SafeEarnModule is Ownable {
     ///      A relayer cannot remove themselves to prevent accidental lockout.
     /// @param relayer Address to de-authorize.
     function removeAuthorizedRelayer(address relayer) external {
-        if (msg.sender != owner() && !authorizedRelayers[msg.sender]) {
-            revert NotAuthorized(msg.sender);
-        }
+        if (msg.sender != owner() && !authorizedRelayers[msg.sender]) revert NotAuthorized(msg.sender);
         if (msg.sender == relayer) revert CannotRemoveSelf();
         authorizedRelayers[relayer] = false;
         emit RemoveAuthorizedRelayer(relayer);
@@ -228,27 +208,20 @@ contract SafeEarnModule is Ownable {
     // Module Lifecycle
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Called by a Safe to install this module. Stores the merkle root
-    ///         and fee collector for the calling Safe.
-    /// @dev Reverts if rootHash is zero, feeCollector is zero, or the Safe is
-    ///      already initialized.
-    /// @param data ABI-encoded (bytes32 rootHash, address feeCollector).
+    /// @notice Called by a Safe to install this module. Stores the merkle root.
+    /// @dev Reverts if rootHash is zero or the Safe is already initialized.
+    /// @param data ABI-encoded bytes32 rootHash.
     function onInstall(bytes calldata data) external {
-        (bytes32 rootHash, address feeCollector) = abi.decode(data, (bytes32, address));
-
+        bytes32 rootHash = abi.decode(data, (bytes32));
         if (rootHash == bytes32(0)) revert InvalidMerkleRoot();
-        if (feeCollector == address(0)) revert InvalidFeeCollector();
-        if (safeConfigs[msg.sender].rootHash != bytes32(0)) {
-            revert ModuleAlreadyInitialized(msg.sender);
-        }
-
-        safeConfigs[msg.sender] = SafeConfig(rootHash, feeCollector);
+        if (safeRootHashes[msg.sender] != bytes32(0)) revert ModuleAlreadyInitialized(msg.sender);
+        safeRootHashes[msg.sender] = rootHash;
         emit ModuleInitialized(msg.sender);
     }
 
     /// @notice Called by a Safe to uninstall this module. Clears all stored config.
     function onUninstall() external {
-        delete safeConfigs[msg.sender];
+        delete safeRootHashes[msg.sender];
         emit ModuleUninitialized(msg.sender);
     }
 
@@ -257,10 +230,9 @@ contract SafeEarnModule is Ownable {
     /// @param newRoot The new merkle root. Must not be zero.
     function changeMerkleRoot(bytes32 newRoot) external {
         if (newRoot == bytes32(0)) revert InvalidMerkleRoot();
-        if (safeConfigs[msg.sender].rootHash == bytes32(0)) revert ModuleNotInitialized(msg.sender);
-
-        bytes32 oldRoot = safeConfigs[msg.sender].rootHash;
-        safeConfigs[msg.sender].rootHash = newRoot;
+        if (safeRootHashes[msg.sender] == bytes32(0)) revert ModuleNotInitialized(msg.sender);
+        bytes32 oldRoot = safeRootHashes[msg.sender];
+        safeRootHashes[msg.sender] = newRoot;
         emit MerkleRootChanged(msg.sender, oldRoot, newRoot);
     }
 
@@ -268,109 +240,75 @@ contract SafeEarnModule is Ownable {
     /// @param smartAccount The address to check.
     /// @return True if the account has a non-zero rootHash stored.
     function isInitialized(address smartAccount) public view returns (bool) {
-        return safeConfigs[smartAccount].rootHash != bytes32(0);
+        return safeRootHashes[smartAccount] != bytes32(0);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Signature Verification & Replay Protection (internal)
+    // Internal Helpers
     // ──────────────────────────────────────────────────────────────
 
     /// @dev Build the keccak256 message hash for a deposit operation.
-    ///      Includes chainId for cross-chain replay protection.
-    /// @param token          The asset token address.
-    /// @param amount         The deposit amount.
-    /// @param underlyingVault The target ERC-4626 vault.
-    /// @param feePercentage  The fee tier in basis points.
-    /// @param safe           The Safe address performing the deposit.
-    /// @param nonce          Unique nonce to prevent replay.
+    ///      Includes chainId and an action tag for cross-chain and cross-action replay protection.
+    /// @param token  The asset token address.
+    /// @param amount The deposit amount.
+    /// @param vault  Struct with underlyingVault, feePercentage, and feeCollector.
+    /// @param safe   The Safe address performing the deposit.
+    /// @param nonce  Unique nonce to prevent replay.
     /// @return The keccak256 hash of the encoded message.
     function _buildDepositMessageHash(
-        address token,
-        uint256 amount,
-        address underlyingVault,
-        uint256 feePercentage,
-        address safe,
-        uint256 nonce
+        address token, uint256 amount, VaultParams calldata vault, address safe, uint256 nonce
     ) internal view returns (bytes32) {
-        // Include "deposit" action tag to prevent cross-action replay
         return keccak256(abi.encode(
             "deposit", block.chainid, token, amount,
-            underlyingVault, feePercentage, safe, nonce
+            vault.underlyingVault, vault.feePercentage, vault.feeCollector, safe, nonce
         ));
     }
 
     /// @dev Build the keccak256 message hash for a withdraw operation.
-    ///      Includes chainId for cross-chain replay protection.
-    /// @param token          The asset token address.
-    /// @param shares         The number of wrapper shares to redeem.
-    /// @param underlyingVault The target ERC-4626 vault.
-    /// @param feePercentage  The fee tier in basis points.
-    /// @param safe           The Safe address performing the withdrawal.
-    /// @param nonce          Unique nonce to prevent replay.
+    ///      Includes chainId and an action tag for cross-chain and cross-action replay protection.
+    /// @param token  The asset token address.
+    /// @param shares The number of wrapper shares to redeem.
+    /// @param vault  Struct with underlyingVault, feePercentage, and feeCollector.
+    /// @param safe   The Safe address performing the withdrawal.
+    /// @param nonce  Unique nonce to prevent replay.
     /// @return The keccak256 hash of the encoded message.
     function _buildWithdrawMessageHash(
-        address token,
-        uint256 shares,
-        address underlyingVault,
-        uint256 feePercentage,
-        address safe,
-        uint256 nonce
+        address token, uint256 shares, VaultParams calldata vault, address safe, uint256 nonce
     ) internal view returns (bytes32) {
-        // Include "withdraw" action tag to prevent cross-action replay
         return keccak256(abi.encode(
             "withdraw", block.chainid, token, shares,
-            underlyingVault, feePercentage, safe, nonce
+            vault.underlyingVault, vault.feePercentage, vault.feeCollector, safe, nonce
         ));
     }
 
-    /// @dev Recover the signer from an EIP-191 signed message, verify they are
+    /// @dev Recover signer from an EIP-191 signed message, verify they are
     ///      an authorized relayer, and mark the hash as used to prevent replay.
     /// @param messageHash The raw keccak256 message hash (before EIP-191 prefix).
     /// @param signature   The 65-byte ECDSA signature (r, s, v).
-    function _verifySignatureAndReplay(
-        bytes32 messageHash,
-        bytes calldata signature
-    ) internal {
+    function _verifySignatureAndReplay(bytes32 messageHash, bytes calldata signature) internal {
         bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         address signer = ECDSA.recover(ethSignedHash, signature);
-
         if (!authorizedRelayers[signer]) revert NotAuthorized(signer);
         if (executedHashes[ethSignedHash]) revert SignatureAlreadyUsed();
         executedHashes[ethSignedHash] = true;
     }
 
-    // ──────────────────────────────────────────────────────────────
-    // Internal Helpers for Core Operations
-    // ──────────────────────────────────────────────────────────────
-
     /// @dev Verify signature, check module initialization, and validate the
-    ///      merkle proof for the (underlyingVault, feePercentage) pair.
-    /// @param messageHash   The raw keccak256 message hash.
-    /// @param signature     The 65-byte ECDSA signature.
-    /// @param safe           The Safe address to verify against.
-    /// @param underlyingVault The ERC-4626 vault in the merkle leaf.
-    /// @param feePercentage  The fee tier in the merkle leaf.
-    /// @param merkleProof    The merkle proof for the (vault, fee) leaf.
-    /// @return feeCollector The Safe's configured fee collector address.
+    ///      merkle proof for the (underlyingVault, feePercentage, feeCollector) triple.
+    /// @param messageHash The raw keccak256 message hash.
+    /// @param signature   The 65-byte ECDSA signature.
+    /// @param safe        The Safe address to verify against.
+    /// @param vault       Struct containing the vault triple for the merkle leaf.
+    /// @param merkleProof The merkle proof for the vault leaf.
     function _verifyAndAuthorize(
-        bytes32 messageHash,
-        bytes calldata signature,
-        address safe,
-        address underlyingVault,
-        uint256 feePercentage,
-        bytes32[] calldata merkleProof
-    ) internal returns (address feeCollector) {
+        bytes32 messageHash, bytes calldata signature,
+        address safe, VaultParams calldata vault, bytes32[] calldata merkleProof
+    ) internal {
         _verifySignatureAndReplay(messageHash, signature);
-
-        SafeConfig storage config = safeConfigs[safe];
-        if (config.rootHash == bytes32(0)) revert ModuleNotInitialized(safe);
-
-        bytes32 leaf = keccak256(abi.encodePacked(underlyingVault, feePercentage));
-        if (!MerkleProof.verify(merkleProof, config.rootHash, leaf)) {
-            revert InvalidMerkleProof();
-        }
-
-        feeCollector = config.feeCollector;
+        bytes32 rootHash = safeRootHashes[safe];
+        if (rootHash == bytes32(0)) revert ModuleNotInitialized(safe);
+        bytes32 leaf = keccak256(abi.encodePacked(vault.underlyingVault, vault.feePercentage, vault.feeCollector));
+        if (!MerkleProof.verify(merkleProof, rootHash, leaf)) revert InvalidMerkleProof();
     }
 
     /// @dev If the token is native ETH, wrap it to WETH via the Safe.
@@ -378,21 +316,14 @@ contract SafeEarnModule is Ownable {
     /// @param token  The token address (may be NATIVE_TOKEN sentinel).
     /// @param amount The amount of ETH to wrap (ignored if not native).
     /// @param safe   The Safe that executes the WETH.deposit() call.
-    /// @return depositToken The actual ERC-20 token to use for the deposit.
-    function _wrapNativeIfNeeded(
-        address token,
-        uint256 amount,
-        address safe
-    ) internal returns (address depositToken) {
+    /// @return The actual ERC-20 token to use for the deposit.
+    function _wrapNativeIfNeeded(address token, uint256 amount, address safe) internal returns (address) {
         if (token == NATIVE_TOKEN) {
-            depositToken = wrappedNative;
             bytes memory wrapData = abi.encodeWithSelector(IWETH.deposit.selector);
-            if (!ISafe(safe).execTransactionFromModule(wrappedNative, amount, wrapData, 0)) {
-                revert NativeWrapFailed();
-            }
-        } else {
-            depositToken = token;
+            if (!ISafe(safe).execTransactionFromModule(wrappedNative, amount, wrapData, 0)) revert NativeWrapFailed();
+            return wrappedNative;
         }
+        return token;
     }
 
     /// @dev Approve the wrapper to spend tokens from the Safe, then execute
@@ -401,39 +332,11 @@ contract SafeEarnModule is Ownable {
     /// @param amount       The amount of tokens to deposit.
     /// @param wrapper      The VaultWrapper address to deposit into.
     /// @param safe         The Safe that executes the approve + deposit calls.
-    /// @param feeCollector The fee collector passed to VaultWrapper.deposit().
-    function _executeDeposit(
-        address depositToken,
-        uint256 amount,
-        address wrapper,
-        address safe,
-        address feeCollector
-    ) internal {
-        // Set fee collector on the wrapper if not already assigned to this Safe
-        if (VaultWrapper(wrapper).depositorFeeCollector(safe) != feeCollector) {
-            bytes memory setFcData = abi.encodeWithSelector(
-                VaultWrapper.setFeeCollector.selector, feeCollector
-            );
-            if (!ISafe(safe).execTransactionFromModule(wrapper, 0, setFcData, 0)) {
-                revert SetFeeCollectorFailed();
-            }
-        }
-
-        // Approve the wrapper to pull tokens from the Safe
-        bytes memory approveData = abi.encodeWithSelector(
-            IERC20.approve.selector, wrapper, amount
-        );
-        if (!ISafe(safe).execTransactionFromModule(depositToken, 0, approveData, 0)) {
-            revert ApprovalFailed();
-        }
-
-        // Execute deposit through the wrapper via the Safe (standard ERC-4626)
-        bytes memory depositData = abi.encodeWithSelector(
-            VaultWrapper.deposit.selector, amount, safe
-        );
-        if (!ISafe(safe).execTransactionFromModule(wrapper, 0, depositData, 0)) {
-            revert DepositFailed();
-        }
+    function _executeDeposit(address depositToken, uint256 amount, address wrapper, address safe) internal {
+        bytes memory approveData = abi.encodeWithSelector(IERC20.approve.selector, wrapper, amount);
+        if (!ISafe(safe).execTransactionFromModule(depositToken, 0, approveData, 0)) revert ApprovalFailed();
+        bytes memory depositData = abi.encodeWithSelector(VaultWrapper.deposit.selector, amount, safe);
+        if (!ISafe(safe).execTransactionFromModule(wrapper, 0, depositData, 0)) revert DepositFailed();
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -445,82 +348,62 @@ contract SafeEarnModule is Ownable {
     ///      wrapper if needed, then orchestrates approve + deposit via the Safe.
     ///      Anyone can submit the transaction — only the signature must come from
     ///      an authorized relayer.
-    /// @param token          The asset token to deposit (use NATIVE_TOKEN for ETH).
-    /// @param amount         Amount of assets to deposit.
-    /// @param underlyingVault The target ERC-4626 vault.
-    /// @param feePercentage  Fee tier in basis points (1–5000).
-    /// @param safe           The Safe smart account to deposit from.
-    /// @param nonce          Unique nonce for replay protection.
-    /// @param signature      EIP-191 ECDSA signature from an authorized relayer.
-    /// @param merkleProof    Proof that (underlyingVault, feePercentage) is authorized.
+    /// @param token       The asset token to deposit (use NATIVE_TOKEN for ETH).
+    /// @param amount      Amount of assets to deposit.
+    /// @param vault       Struct with underlyingVault, feePercentage, and feeCollector.
+    /// @param safe        The Safe smart account to deposit from.
+    /// @param nonce       Unique nonce for replay protection.
+    /// @param signature   EIP-191 ECDSA signature from an authorized relayer.
+    /// @param merkleProof Proof that the vault triple is authorized for this Safe.
     function autoDeposit(
         address token,
         uint256 amount,
-        address underlyingVault,
-        uint256 feePercentage,
+        VaultParams calldata vault,
         address safe,
         uint256 nonce,
         bytes calldata signature,
         bytes32[] calldata merkleProof
     ) external {
-        bytes32 messageHash = _buildDepositMessageHash(
-            token, amount, underlyingVault, feePercentage, safe, nonce
-        );
-        address feeCollector = _verifyAndAuthorize(
-            messageHash, signature, safe, underlyingVault, feePercentage, merkleProof
-        );
+        bytes32 messageHash = _buildDepositMessageHash(token, amount, vault, safe, nonce);
+        _verifyAndAuthorize(messageHash, signature, safe, vault, merkleProof);
 
-        address wrapper = factory.deploy(underlyingVault, feePercentage);
+        address wrapper = factory.deploy(vault.underlyingVault, vault.feePercentage, vault.feeCollector);
         address depositToken = _wrapNativeIfNeeded(token, amount, safe);
-        _executeDeposit(depositToken, amount, wrapper, safe, feeCollector);
+        _executeDeposit(depositToken, amount, wrapper, safe);
 
-        emit AutoDepositExecuted(safe, token, underlyingVault, amount);
+        emit AutoDepositExecuted(safe, token, vault.underlyingVault, amount);
     }
 
     /// @notice Execute a relayer-signed withdrawal from a VaultWrapper on behalf of a Safe.
     /// @dev Verifies the ECDSA signature, validates the merkle proof, and redeems
     ///      wrapper shares back to the Safe. For native ETH vaults the Safe receives
     ///      WETH — the owner can unwrap it independently if needed.
-    /// @param token          The asset token (use NATIVE_TOKEN for ETH).
-    /// @param shares         Number of wrapper shares to redeem.
-    /// @param underlyingVault The target ERC-4626 vault.
-    /// @param feePercentage  Fee tier in basis points (1–5000).
-    /// @param safe           The Safe smart account to withdraw to.
-    /// @param nonce          Unique nonce for replay protection.
-    /// @param signature      EIP-191 ECDSA signature from an authorized relayer.
-    /// @param merkleProof    Proof that (underlyingVault, feePercentage) is authorized.
+    /// @param token       The asset token (use NATIVE_TOKEN for ETH).
+    /// @param shares      Number of wrapper shares to redeem.
+    /// @param vault       Struct with underlyingVault, feePercentage, and feeCollector.
+    /// @param safe        The Safe smart account to withdraw to.
+    /// @param nonce       Unique nonce for replay protection.
+    /// @param signature   EIP-191 ECDSA signature from an authorized relayer.
+    /// @param merkleProof Proof that the vault triple is authorized for this Safe.
     function autoWithdraw(
         address token,
         uint256 shares,
-        address underlyingVault,
-        uint256 feePercentage,
+        VaultParams calldata vault,
         address safe,
         uint256 nonce,
         bytes calldata signature,
         bytes32[] calldata merkleProof
     ) external {
-        bytes32 messageHash = _buildWithdrawMessageHash(
-            token, shares, underlyingVault, feePercentage, safe, nonce
-        );
-        _verifyAndAuthorize(
-            messageHash, signature, safe, underlyingVault, feePercentage, merkleProof
-        );
+        bytes32 messageHash = _buildWithdrawMessageHash(token, shares, vault, safe, nonce);
+        _verifyAndAuthorize(messageHash, signature, safe, vault, merkleProof);
 
-        // Compute wrapper address — revert if it hasn't been deployed yet
-        address wrapper = factory.computeAddress(underlyingVault, feePercentage);
+        address wrapper = factory.computeAddress(vault.underlyingVault, vault.feePercentage, vault.feeCollector);
         if (wrapper.code.length == 0) revert WrapperNotDeployed();
 
-        // Snapshot expected assets before redeem for the event
         uint256 assets = VaultWrapper(wrapper).convertToAssets(shares);
+        bytes memory redeemData = abi.encodeWithSelector(VaultWrapper.redeem.selector, shares, safe, safe);
+        if (!ISafe(safe).execTransactionFromModule(wrapper, 0, redeemData, 0)) revert RedeemFailed();
 
-        // Redeem shares via the Safe — assets go back to the Safe
-        bytes memory redeemData = abi.encodeWithSelector(
-            VaultWrapper.redeem.selector, shares, safe, safe
-        );
-        if (!ISafe(safe).execTransactionFromModule(wrapper, 0, redeemData, 0)) {
-            revert RedeemFailed();
-        }
-
-        emit AutoWithdrawExecuted(safe, token, underlyingVault, shares, assets);
+        emit AutoWithdrawExecuted(safe, token, vault.underlyingVault, shares, assets);
     }
 }

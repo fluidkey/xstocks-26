@@ -12,6 +12,8 @@ contract VaultWrapperFactoryTest is Test {
     MockERC20 public asset;
     MockERC4626 public underlyingVault;
 
+    address constant FEE_COLLECTOR = address(0xFEE);
+
     function setUp() public {
         factory = new VaultWrapperFactory();
         asset = new MockERC20("Test Token", "TT", 18);
@@ -19,85 +21,87 @@ contract VaultWrapperFactoryTest is Test {
     }
 
     // ---------------------------------------------------------------
-    // Feature: safe-4626-vault-module, Property 1: Factory Deploy Idempotence
-    // **Validates: Requirements 1.2**
+    // Deploy Idempotence
     // ---------------------------------------------------------------
 
     function testFuzz_deployIdempotence(uint256 feePercentage) public {
         feePercentage = bound(feePercentage, 1, 5000);
 
-        address first = factory.deploy(address(underlyingVault), feePercentage);
-        address second = factory.deploy(address(underlyingVault), feePercentage);
+        address first = factory.deploy(address(underlyingVault), feePercentage, FEE_COLLECTOR);
+        address second = factory.deploy(address(underlyingVault), feePercentage, FEE_COLLECTOR);
 
         assertEq(first, second, "Duplicate deploy must return the same address");
     }
 
     // ---------------------------------------------------------------
-    // Feature: safe-4626-vault-module, Property 2: Factory CREATE2 Determinism
-    // **Validates: Requirements 1.3, 1.4**
+    // CREATE2 Determinism
     // ---------------------------------------------------------------
 
     function testFuzz_create2Determinism(uint256 feePercentage) public {
         feePercentage = bound(feePercentage, 1, 5000);
 
-        address predicted = factory.computeAddress(address(underlyingVault), feePercentage);
-        address deployed = factory.deploy(address(underlyingVault), feePercentage);
+        address predicted = factory.computeAddress(address(underlyingVault), feePercentage, FEE_COLLECTOR);
+        address deployed = factory.deploy(address(underlyingVault), feePercentage, FEE_COLLECTOR);
 
         assertEq(predicted, deployed, "computeAddress must match deployed address");
     }
 
     // ---------------------------------------------------------------
-    // Feature: safe-4626-vault-module, Property 3: Fee Percentage Validation
-    // **Validates: Requirements 4.4**
+    // Fee Percentage Validation
     // ---------------------------------------------------------------
 
     function testFuzz_feePercentageValidation(uint256 feePercentage) public {
         if (feePercentage == 0 || feePercentage > 5000) {
             vm.expectRevert(VaultWrapperFactory.InvalidFeePercentage.selector);
-            factory.deploy(address(underlyingVault), feePercentage);
+            factory.deploy(address(underlyingVault), feePercentage, FEE_COLLECTOR);
         } else {
-            address wrapper = factory.deploy(address(underlyingVault), feePercentage);
+            address wrapper = factory.deploy(address(underlyingVault), feePercentage, FEE_COLLECTOR);
             assertTrue(wrapper != address(0), "Valid fee must produce a non-zero wrapper");
         }
     }
 
     // ---------------------------------------------------------------
-    // Unit tests for VaultWrapperFactory
+    // Different fee collectors produce different wrappers
     // ---------------------------------------------------------------
 
-    function test_deployEmitsEvent() public {
-        vm.expectEmit(true, true, false, true);
-        emit VaultWrapperFactory.WrapperDeployed(
-            address(underlyingVault),
-            factory.computeAddress(address(underlyingVault), 100),
-            address(asset),
-            100
-        );
-        factory.deploy(address(underlyingVault), 100);
+    function test_differentFeeCollectorsDifferentWrappers() public {
+        address wrapper1 = factory.deploy(address(underlyingVault), 100, address(0xAAA));
+        address wrapper2 = factory.deploy(address(underlyingVault), 100, address(0xBBB));
+
+        assertTrue(wrapper1 != wrapper2, "Different fee collectors must produce different wrappers");
     }
 
+    // ---------------------------------------------------------------
+    // Boundary and error tests
+    // ---------------------------------------------------------------
+
     function test_deployBoundaryFee1() public {
-        address wrapper = factory.deploy(address(underlyingVault), 1);
-        assertTrue(wrapper != address(0), "Fee=1 should deploy successfully");
+        address wrapper = factory.deploy(address(underlyingVault), 1, FEE_COLLECTOR);
+        assertTrue(wrapper != address(0));
     }
 
     function test_deployBoundaryFee5000() public {
-        address wrapper = factory.deploy(address(underlyingVault), 5000);
-        assertTrue(wrapper != address(0), "Fee=5000 should deploy successfully");
+        address wrapper = factory.deploy(address(underlyingVault), 5000, FEE_COLLECTOR);
+        assertTrue(wrapper != address(0));
     }
 
     function test_deployInvalidFee0() public {
         vm.expectRevert(VaultWrapperFactory.InvalidFeePercentage.selector);
-        factory.deploy(address(underlyingVault), 0);
+        factory.deploy(address(underlyingVault), 0, FEE_COLLECTOR);
     }
 
     function test_deployInvalidFee5001() public {
         vm.expectRevert(VaultWrapperFactory.InvalidFeePercentage.selector);
-        factory.deploy(address(underlyingVault), 5001);
+        factory.deploy(address(underlyingVault), 5001, FEE_COLLECTOR);
     }
 
     function test_deployZeroAddressVault() public {
         vm.expectRevert(VaultWrapperFactory.InvalidUnderlyingVault.selector);
-        factory.deploy(address(0), 100);
+        factory.deploy(address(0), 100, FEE_COLLECTOR);
+    }
+
+    function test_deployZeroFeeCollector() public {
+        vm.expectRevert(VaultWrapperFactory.InvalidFeeCollector.selector);
+        factory.deploy(address(underlyingVault), 100, address(0));
     }
 }

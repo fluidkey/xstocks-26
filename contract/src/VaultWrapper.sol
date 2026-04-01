@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.30;
 
 import {ERC20} from "@openzeppelin/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
@@ -9,40 +9,31 @@ import {Math} from "@openzeppelin/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 
 /// @title VaultWrapper
-/// @notice Non-transferable ERC-20 share token that wraps an underlying ERC-4626
-///         vault, tracks per-depositor positions, and applies a fixed annual
-///         percentage fee via virtual share dilution per Fee Collector.
-/// @dev Shares are non-transferable — transfer, transferFrom, and approve all
-///      revert. Only internal _mint (from zero address) and _burn (to zero
-///      address) are allowed for deposit/withdrawal flows.
-///
-///      The fee mechanism works by computing "virtual" shares that represent the
-///      fee owed to each Fee Collector. These virtual shares are included in the
-///      effective totalSupply, which dilutes the share price for depositors —
-///      automatically reflecting the fee in convertToAssets().
+/// @notice Non-transferable ERC-4626 wrapper that sits between depositors and an
+///         underlying ERC-4626 vault. Accrues a percentage fee on yield via a
+///         totalAssets() override — the fee collector and rate are fixed at deploy.
+/// @dev Fee mechanism: totalAssets() reports grossAssets minus the fee portion of
+///      any positive yield (grossAssets - totalDeposited). This automatically
+///      dilutes the share price to reflect the fee without any virtual shares,
+///      per-depositor tracking, or settlement logic.
 contract VaultWrapper is ERC20 {
     using SafeERC20 for IERC20;
+    using Math for uint256;
 
     // ──────────────────────────────────────────────────────────────
     // Errors
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Thrown when transfer() or transferFrom() is called (shares are non-transferable).
+    /// @notice Thrown when transfer/transferFrom is called (shares are non-transferable).
     error TransfersDisabled();
 
-    /// @notice Thrown when approve() is called (approvals are disabled).
+    /// @notice Thrown when approve is called (approvals are disabled).
     error ApprovalsDisabled();
-
-    /// @notice Thrown when a deposit is attempted before setting a fee collector.
-    error FeeCollectorNotSet();
-
-    /// @notice Thrown when setFeeCollector is called with the zero address.
-    error ZeroFeeCollector();
 
     /// @notice Thrown when a deposit or withdrawal specifies zero assets.
     error ZeroAssets();
 
-    /// @notice Thrown when a mint or redeem specifies zero shares, or the computed shares are zero.
+    /// @notice Thrown when a mint or redeem specifies zero shares.
     error ZeroShares();
 
     /// @notice Thrown when a redeem or withdraw exceeds the owner's share balance.
@@ -55,52 +46,15 @@ contract VaultWrapper is ERC20 {
     // Events
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Emitted when a depositor's fee collector is rotated to a new address.
-    /// @param depositor    The depositor whose collector changed.
-    /// @param oldCollector The previous fee collector.
-    /// @param newCollector The new fee collector.
-    event FeeCollectorChanged(
-        address indexed depositor,
-        address indexed oldCollector,
-        address indexed newCollector
-    );
-
-    /// @notice Emitted when accumulated virtual fee shares are collected and
-    ///         redeemed as real assets to the fee collector.
-    /// @param feeCollector  The address that received the fee assets.
-    /// @param virtualShares The number of virtual shares that were redeemed.
-    /// @param assets        The amount of underlying assets transferred.
+    /// @notice Emitted when accumulated fees are collected to the fee collector.
+    /// @param feeCollector Address that received the fee assets.
+    /// @param yield        Total yield that was subject to the fee.
+    /// @param feeAssets    Amount of assets sent to the fee collector.
     event FeesCollected(
         address indexed feeCollector,
-        uint256 virtualShares,
-        uint256 assets
+        uint256 yield,
+        uint256 feeAssets
     );
-
-    /// @notice Emitted when pending virtual shares are settled (snapshotted)
-    ///         for a fee collector during a position change.
-    /// @param feeCollector  The fee collector whose shares were settled.
-    /// @param virtualShares The number of virtual shares that were settled.
-    event FeeSettled(
-        address indexed feeCollector,
-        uint256 virtualShares
-    );
-
-    // ──────────────────────────────────────────────────────────────
-    // Structs
-    // ──────────────────────────────────────────────────────────────
-
-    /// @notice Tracks fee accrual state for a single fee collector.
-    /// @dev One instance per fee collector address. Virtual shares accrue
-    ///      continuously based on totalAUM, feePercentage, and elapsed time.
-    ///      They are "settled" (snapshotted) before any position change.
-    struct FeeCollectorState {
-        /// @notice Sum of asset values of all depositors assigned to this collector
-        uint256 totalAUM;
-        /// @notice Timestamp of the last virtual share settlement
-        uint256 lastAccrualTimestamp;
-        /// @notice Accumulated virtual shares ready for collection via collectFees()
-        uint256 settledVirtualShares;
-    }
 
     // ──────────────────────────────────────────────────────────────
     // Immutables
@@ -112,65 +66,49 @@ contract VaultWrapper is ERC20 {
     /// @notice The asset token (same as underlying.asset()).
     IERC20 public immutable asset;
 
-    /// @notice Annual fee in basis points (1 = 0.01%, 100 = 1%, 5000 = 50%).
+    /// @notice Annual fee in basis points applied to yield (e.g. 100 = 1%).
     uint256 public immutable feePercentage;
 
-    /// @dev Virtual offset added to effectiveTotalSupply in share conversion
-    ///      math to prevent the ERC-4626 inflation / donation attack.
-    ///      Derived from the underlying asset's decimals: 10 ** decimals.
-    ///      Uses the same asymmetric pattern as OpenZeppelin ERC4626 — large
-    ///      offset on supply, +1 on assets — so convertToAssets can never
-    ///      exceed real totalAssets. The attacker must donate OFFSET x the
-    ///      victim's deposit to steal meaningful value, which for an 18-decimal
-    ///      token means donating 1e18 units (~1 full token) to steal 1 wei.
-    uint256 private immutable _VIRTUAL_SHARE_OFFSET;
+    /// @notice Address that receives collected fees — set once at deploy.
+    address public immutable feeCollector;
 
     // ──────────────────────────────────────────────────────────────
     // Storage
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Maps each depositor to their assigned fee collector address.
-    mapping(address => address) public depositorFeeCollector;
+    /// @notice Running total of net deposits. Used to compute yield.
+    /// @dev Increased on deposit, decreased on withdraw/redeem.
+    ///      yield = grossAssets - totalDeposited (when positive).
+    uint256 public totalDeposited;
 
-    /// @notice Maps each fee collector to their accrual state (AUM, timestamp, settled shares).
-    mapping(address => FeeCollectorState) public feeCollectorStates;
-
-    /// @notice Global sum of all settled virtual shares across all fee collectors.
-    /// @dev Used in effectiveTotalSupply() to include settled (but not yet collected)
-    ///      fee shares in the share price calculation.
-    uint256 public totalSettledVirtualShares;
-
-    /// @notice Timestamp of the last global fee accrual for effectiveTotalSupply.
-    /// @dev Updated on every deposit/withdraw/redeem/collectFees so the global
-    ///      pending calculation stays accurate without iterating collectors.
-    uint256 public globalLastAccrualTimestamp;
+    /// @dev Virtual offset for share conversion math to prevent the ERC-4626
+    ///      inflation / donation attack. Set once in constructor from asset decimals.
+    ///      Uses the same asymmetric pattern as OpenZeppelin ERC4626 — large
+    ///      offset on supply, +1 on assets — so convertToAssets can never
+    ///      exceed real totalAssets. The attacker must donate OFFSET × the
+    ///      victim's deposit to steal meaningful value.
+    uint256 private _virtualShareOffset;
 
     // ──────────────────────────────────────────────────────────────
     // Constructor
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Deploy a new wrapper for the given underlying vault and fee tier.
-    /// @dev Called by VaultWrapperFactory via CREATE2. The share token name and
-    ///      symbol are derived from the underlying vault (e.g. "Wrapped Vault" / "wVLT").
-    /// @param _underlying   Address of the underlying ERC-4626 vault.
-    /// @param _feePercentage Annual fee in basis points (1–5000).
+    /// @notice Deploy a new wrapper for the given underlying vault, fee tier, and collector.
+    /// @param _underlying     Address of the underlying ERC-4626 vault.
+    /// @param _feePercentage  Fee in basis points applied to yield (1–5000).
+    /// @param _feeCollector   Address that receives collected fees.
     constructor(
         address _underlying,
-        uint256 _feePercentage
+        uint256 _feePercentage,
+        address _feeCollector
     )
-        ERC20(
-            string.concat("Wrapped ", IERC4626(_underlying).name()),
-            string.concat("w", IERC4626(_underlying).symbol())
-        )
+        ERC20("VaultWrapper", "vWRP")
     {
         underlying = IERC4626(_underlying);
         asset = IERC20(IERC4626(_underlying).asset());
         feePercentage = _feePercentage;
-
-        // Derive virtual share offset from asset decimals so the inflation
-        // attack protection scales with the token's precision.
-        uint8 assetDecimals = IERC20Metadata(IERC4626(_underlying).asset()).decimals();
-        _VIRTUAL_SHARE_OFFSET = 10 ** uint256(assetDecimals);
+        feeCollector = _feeCollector;
+        _virtualShareOffset = 10 ** uint256(IERC20Metadata(IERC4626(_underlying).asset()).decimals());
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -192,372 +130,147 @@ contract VaultWrapper is ERC20 {
         revert ApprovalsDisabled();
     }
 
+    /// @notice Decimals match the underlying asset.
+    function decimals() public view override returns (uint8) {
+        return IERC20Metadata(address(asset)).decimals();
+    }
+
     // ──────────────────────────────────────────────────────────────
     // ERC-4626 View Functions
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Total assets held by this wrapper in the underlying vault.
-    /// @return The asset value of the wrapper's underlying vault share balance.
-    function totalAssets() public view returns (uint256) {
+    /// @notice Gross asset value held in the underlying vault (before fee deduction).
+    function grossAssets() public view returns (uint256) {
         uint256 bal = underlying.balanceOf(address(this));
         if (bal == 0) return 0;
         return underlying.convertToAssets(bal);
     }
 
-    /// @notice Compute pending (unsettled) virtual fee shares for a fee collector.
-    /// @dev O(1) per collector — uses the formula:
-    ///      feeAssets = AUM × feePercentage × elapsed / (10000 × 365.25 days)
-    ///      then converts feeAssets to shares using the base supply ratio
-    ///      (excluding pending virtual shares to avoid circular dependency).
-    /// @param feeCollector The fee collector address to query.
-    /// @return The number of pending virtual shares.
-    function getPendingVirtualShares(address feeCollector) public view returns (uint256) {
-        FeeCollectorState storage state = feeCollectorStates[feeCollector];
-        if (state.totalAUM == 0 || state.lastAccrualTimestamp == 0) return 0;
+    /// @notice Total assets after deducting the fee portion of any positive yield.
+    /// @dev This is the core fee mechanism — by reporting less than grossAssets,
+    ///      the share price automatically reflects the fee.
+    function totalAssets() public view returns (uint256) {
+        uint256 gross = grossAssets();
+        if (gross <= totalDeposited) return gross;
 
-        uint256 elapsed = block.timestamp - state.lastAccrualTimestamp;
-        if (elapsed == 0) return 0;
-
-        // 365.25 days = 31_557_600 seconds
-        uint256 feeAssets = Math.mulDiv(
-            state.totalAUM * feePercentage,
-            elapsed,
-            10000 * 31557600
-        );
-        if (feeAssets == 0) return 0;
-
-        // Convert fee assets to shares using the base ratio (real shares + settled)
-        // to avoid circular dependency between collectors
-        uint256 _totalAssets = totalAssets();
-        uint256 baseSupply = totalSupply() + totalSettledVirtualShares;
-        if (_totalAssets == 0 || baseSupply == 0) return feeAssets;
-
-        return Math.mulDiv(feeAssets, baseSupply, _totalAssets, Math.Rounding.Floor);
+        // Fee only applies to positive yield
+        uint256 yield = gross - totalDeposited;
+        uint256 fee = yield.mulDiv(feePercentage, 10000, Math.Rounding.Floor);
+        return gross - fee;
     }
 
-    /// @notice Effective total supply including real shares, settled virtual shares,
-    ///         and global pending (unsettled) virtual fee shares.
-    /// @dev O(1) — computes global pending fees from totalAssets and elapsed time
-    ///      since the last accrual, avoiding per-collector iteration.
-    /// @return The effective total supply.
-    function effectiveTotalSupply() public view returns (uint256) {
-        uint256 baseSupply = totalSupply() + totalSettledVirtualShares;
-        uint256 _totalAssets = totalAssets();
-
-        // No pending fees if no assets or no prior accrual
-        if (_totalAssets == 0 || globalLastAccrualTimestamp == 0) return baseSupply;
-
-        uint256 elapsed = block.timestamp - globalLastAccrualTimestamp;
-        if (elapsed == 0) return baseSupply;
-
-        // Global fee assets accrued since last settlement
-        uint256 feeAssets = Math.mulDiv(
-            _totalAssets * feePercentage,
-            elapsed,
-            10000 * 31557600
-        );
-        if (feeAssets == 0) return baseSupply;
-
-        // Convert fee assets to virtual shares using the base ratio
-        uint256 pendingShares;
-        if (baseSupply == 0) {
-            pendingShares = feeAssets;
-        } else {
-            pendingShares = Math.mulDiv(feeAssets, baseSupply, _totalAssets, Math.Rounding.Floor);
-        }
-
-        return baseSupply + pendingShares;
-    }
-
-    /// @notice Convert an asset amount to wrapper shares using the effective total supply.
-    /// @dev Includes a virtual offset to both supply and assets to prevent
-    ///      the ERC-4626 inflation / donation attack.
-    /// @param assets The amount of assets to convert.
-    /// @return The equivalent number of wrapper shares (rounded down).
+    /// @notice Convert an asset amount to wrapper shares.
+    /// @dev Includes virtual offset to prevent the inflation/donation attack.
     function convertToShares(uint256 assets) public view returns (uint256) {
-        return Math.mulDiv(
-            assets,
-            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+        return assets.mulDiv(
+            totalSupply() + _virtualShareOffset,
             totalAssets() + 1,
             Math.Rounding.Floor
         );
     }
 
-    /// @notice Convert a share amount to assets using the effective total supply.
-    /// @dev Includes a virtual offset to both supply and assets to prevent
-    ///      the ERC-4626 inflation / donation attack.
-    /// @param shares The number of shares to convert.
-    /// @return The equivalent amount of assets (rounded down).
+    /// @notice Convert a share amount to assets.
+    /// @dev Includes virtual offset to prevent the inflation/donation attack.
     function convertToAssets(uint256 shares) public view returns (uint256) {
-        return Math.mulDiv(
-            shares,
+        return shares.mulDiv(
             totalAssets() + 1,
-            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+            totalSupply() + _virtualShareOffset,
             Math.Rounding.Floor
         );
     }
 
-    // ──────────────────────────────────────────────────────────────
-    // ERC-4626 Preview & Max Functions
-    // ──────────────────────────────────────────────────────────────
-
-    /// @notice Preview the number of shares that would be minted for a given deposit.
-    /// @param assets The amount of assets to deposit.
-    /// @return The number of shares that would be minted.
+    /// @notice Preview the number of shares minted for a given deposit.
     function previewDeposit(uint256 assets) external view returns (uint256) {
         return convertToShares(assets);
     }
 
-    /// @notice Preview the number of assets required to mint a given number of shares.
-    /// @dev Rounds up to ensure the caller pays enough.
-    /// @param shares The number of shares to mint.
-    /// @return The number of assets required.
+    /// @notice Preview the assets required to mint a given number of shares.
     function previewMint(uint256 shares) external view returns (uint256) {
-        return Math.mulDiv(
-            shares,
+        return shares.mulDiv(
             totalAssets() + 1,
-            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+            totalSupply() + _virtualShareOffset,
             Math.Rounding.Ceil
         );
     }
 
-    /// @notice Preview the number of shares that must be burned to withdraw exact assets.
-    /// @dev Rounds up so the owner burns enough shares.
-    /// @param assets The amount of assets to withdraw.
-    /// @return The number of shares that would be burned.
+    /// @notice Preview the shares burned to withdraw exact assets.
     function previewWithdraw(uint256 assets) external view returns (uint256) {
-        return Math.mulDiv(
-            assets,
-            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+        return assets.mulDiv(
+            totalSupply() + _virtualShareOffset,
             totalAssets() + 1,
             Math.Rounding.Ceil
         );
     }
 
-    /// @notice Preview the number of assets returned for redeeming a given number of shares.
-    /// @param shares The number of shares to redeem.
-    /// @return The number of assets that would be returned.
+    /// @notice Preview the assets returned for redeeming shares.
     function previewRedeem(uint256 shares) external view returns (uint256) {
         return convertToAssets(shares);
     }
 
     /// @notice Maximum assets that can be deposited (no cap).
-    /// @param /* receiver */ Unused — included for ERC-4626 interface compliance.
     function maxDeposit(address) external pure returns (uint256) {
         return type(uint256).max;
     }
 
     /// @notice Maximum shares that can be minted (no cap).
-    /// @param /* receiver */ Unused — included for ERC-4626 interface compliance.
     function maxMint(address) external pure returns (uint256) {
         return type(uint256).max;
     }
 
-    /// @notice Maximum assets the owner can withdraw (their full position value).
-    /// @param owner The address to check.
-    /// @return The maximum withdrawable asset amount.
+    /// @notice Maximum assets the owner can withdraw.
     function maxWithdraw(address owner) external view returns (uint256) {
         return convertToAssets(balanceOf(owner));
     }
 
-    /// @notice Maximum shares the owner can redeem (their full balance).
-    /// @param owner The address to check.
-    /// @return The maximum redeemable share amount.
+    /// @notice Maximum shares the owner can redeem.
     function maxRedeem(address owner) external view returns (uint256) {
         return balanceOf(owner);
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    // View Helpers
-    // ──────────────────────────────────────────────────────────────
-
-    /// @notice Get the fee collector assigned to a depositor.
-    /// @param depositor The depositor address.
-    /// @return The fee collector address (zero if no deposit has been made).
-    function getDepositorFeeCollector(address depositor) external view returns (address) {
-        return depositorFeeCollector[depositor];
-    }
-
-    /// @notice Get the full fee accrual state for a fee collector.
-    /// @param feeCollector The fee collector address.
-    /// @return aum                Total assets under management for this collector.
-    /// @return settledShares      Settled virtual shares ready for collection.
-    /// @return pendingShares      Unsettled virtual shares accruing in real-time.
-    /// @return totalClaimableAssets Asset value of settled + pending virtual shares.
-    function getFeeCollectorState(address feeCollector) external view returns (
-        uint256 aum,
-        uint256 settledShares,
-        uint256 pendingShares,
-        uint256 totalClaimableAssets
-    ) {
-        FeeCollectorState storage state = feeCollectorStates[feeCollector];
-        aum = state.totalAUM;
-        settledShares = state.settledVirtualShares;
-        pendingShares = getPendingVirtualShares(feeCollector);
-        totalClaimableAssets = convertToAssets(settledShares + pendingShares);
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    // Internal Helpers
-    // ──────────────────────────────────────────────────────────────
-
-    /// @dev Settle pending virtual shares for a fee collector by computing the
-    ///      accrued amount and adding it to the settled total. Resets the
-    ///      accrual timestamp to block.timestamp for both the collector and global.
-    /// @param feeCollector The fee collector whose virtual shares to settle.
-    function _settleFeeCollector(address feeCollector) internal {
-        FeeCollectorState storage state = feeCollectorStates[feeCollector];
-
-        if (state.lastAccrualTimestamp > 0 && state.totalAUM > 0) {
-            uint256 elapsed = block.timestamp - state.lastAccrualTimestamp;
-            if (elapsed > 0) {
-                // Inline the pending virtual shares formula to save gas
-                uint256 feeAssets = Math.mulDiv(
-                    state.totalAUM * feePercentage,
-                    elapsed,
-                    10000 * 31557600
-                );
-
-                if (feeAssets > 0) {
-                    uint256 _totalAssets = totalAssets();
-                    uint256 baseSupply = totalSupply() + totalSettledVirtualShares;
-                    uint256 pending;
-                    if (_totalAssets == 0 || baseSupply == 0) {
-                        pending = feeAssets;
-                    } else {
-                        pending = Math.mulDiv(
-                            feeAssets, baseSupply, _totalAssets, Math.Rounding.Floor
-                        );
-                    }
-
-                    if (pending > 0) {
-                        state.settledVirtualShares += pending;
-                        totalSettledVirtualShares += pending;
-                        emit FeeSettled(feeCollector, pending);
-                    }
-                }
-            }
-        }
-
-        state.lastAccrualTimestamp = block.timestamp;
-        // Only advance the global timestamp when this collector has real AUM.
-        // This prevents griefing via collectFees(randomAddress) which would
-        // otherwise reset the global clock and undercount pending fees.
-        if (state.totalAUM > 0) {
-            globalLastAccrualTimestamp = block.timestamp;
-        }
-    }
-
-    /// @dev Shared deposit logic — settles the receiver's fee collector, updates
-    ///      AUM, pulls assets from the caller, deposits into the underlying vault,
-    ///      and mints wrapper shares to the receiver.
-    /// @param assets   The amount of underlying assets to deposit.
-    /// @param shares   The number of wrapper shares to mint.
-    /// @param receiver The address that receives the minted shares.
-    function _deposit(
-        uint256 assets,
-        uint256 shares,
-        address receiver
-    ) internal {
-        address feeCollector = depositorFeeCollector[receiver];
-        if (feeCollector == address(0)) revert FeeCollectorNotSet();
-
-        _settleFeeCollector(feeCollector);
-        feeCollectorStates[feeCollector].totalAUM += assets;
-
-        // Ensure global timestamp is set after AUM increases (covers first
-        // deposit where _settleFeeCollector skipped the update due to AUM == 0)
-        globalLastAccrualTimestamp = block.timestamp;
-
-        // Pull assets from caller, approve underlying vault, and deposit
-        asset.safeTransferFrom(msg.sender, address(this), assets);
-        SafeERC20.forceApprove(asset, address(underlying), assets);
-        underlying.deposit(assets, address(this));
-
-        // Mint wrapper shares to receiver
-        _mint(receiver, shares);
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    // Fee Collector Assignment
-    // ──────────────────────────────────────────────────────────────
-
-    /// @notice Set or rotate the fee collector for the caller.
-    /// @dev Must be called before the first deposit. If the caller already has
-    ///      a position and is rotating to a new collector, AUM is moved between
-    ///      collectors and both are settled first.
-    /// @param feeCollector The address that will accrue fees for this depositor.
-    function setFeeCollector(address feeCollector) external {
-        if (feeCollector == address(0)) revert ZeroFeeCollector();
-
-        address oldCollector = depositorFeeCollector[msg.sender];
-
-        if (oldCollector == feeCollector) return;
-
-        if (oldCollector != address(0)) {
-            // Rotation — settle old, move AUM to new
-            _settleFeeCollector(oldCollector);
-            uint256 depositorAssets = convertToAssets(balanceOf(msg.sender));
-
-            if (depositorAssets >= feeCollectorStates[oldCollector].totalAUM) {
-                feeCollectorStates[oldCollector].totalAUM = 0;
-            } else {
-                feeCollectorStates[oldCollector].totalAUM -= depositorAssets;
-            }
-
-            _settleFeeCollector(feeCollector);
-            feeCollectorStates[feeCollector].totalAUM += depositorAssets;
-        }
-
-        depositorFeeCollector[msg.sender] = feeCollector;
-        emit FeeCollectorChanged(msg.sender, oldCollector, feeCollector);
     }
 
     // ──────────────────────────────────────────────────────────────
     // ERC-4626 Mutative Functions
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Deposit assets and receive wrapper shares (ERC-4626 compliant).
-    /// @dev The receiver must have a fee collector set via setFeeCollector before
-    ///      calling this function.
+    /// @notice Deposit assets and receive wrapper shares.
     /// @param assets   Amount of underlying assets to deposit.
     /// @param receiver Address that receives the minted wrapper shares.
     /// @return shares  Number of wrapper shares minted.
-    function deposit(
-        uint256 assets,
-        address receiver
-    ) external returns (uint256 shares) {
+    function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
         if (assets == 0) revert ZeroAssets();
 
-        // Snapshot share price before any state changes
         shares = convertToShares(assets);
         if (shares == 0) revert ZeroShares();
 
-        _deposit(assets, shares, receiver);
+        // Pull assets, deposit into underlying, mint wrapper shares
+        asset.safeTransferFrom(msg.sender, address(this), assets);
+        SafeERC20.forceApprove(asset, address(underlying), assets);
+        underlying.deposit(assets, address(this));
+
+        totalDeposited += assets;
+        _mint(receiver, shares);
     }
 
-    /// @notice Mint exact wrapper shares by depositing the required assets (ERC-4626 compliant).
-    /// @dev The receiver must have a fee collector set via setFeeCollector before
-    ///      calling this function.
+    /// @notice Mint exact wrapper shares by depositing the required assets.
     /// @param shares   Number of wrapper shares to mint.
     /// @param receiver Address that receives the minted shares.
     /// @return assets  Amount of underlying assets pulled from the caller.
-    function mint(
-        uint256 shares,
-        address receiver
-    ) external returns (uint256 assets) {
+    function mint(uint256 shares, address receiver) external returns (uint256 assets) {
         if (shares == 0) revert ZeroShares();
 
         // Round up so the caller pays enough assets for the requested shares
-        assets = Math.mulDiv(
-            shares,
+        assets = shares.mulDiv(
             totalAssets() + 1,
-            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+            totalSupply() + _virtualShareOffset,
             Math.Rounding.Ceil
         );
         if (assets == 0) revert ZeroAssets();
 
-        _deposit(assets, shares, receiver);
+        asset.safeTransferFrom(msg.sender, address(this), assets);
+        SafeERC20.forceApprove(asset, address(underlying), assets);
+        underlying.deposit(assets, address(this));
+
+        totalDeposited += assets;
+        _mint(receiver, shares);
     }
 
     /// @notice Redeem wrapper shares for underlying assets.
@@ -570,7 +283,6 @@ contract VaultWrapper is ERC20 {
         address receiver,
         address owner
     ) external returns (uint256 assets) {
-        // Approvals are disabled so only the owner can redeem their own shares
         if (msg.sender != owner) revert NotShareOwner();
         if (shares == 0) revert ZeroShares();
         if (balanceOf(owner) < shares) revert InsufficientBalance();
@@ -578,19 +290,11 @@ contract VaultWrapper is ERC20 {
         assets = convertToAssets(shares);
         if (assets == 0) revert ZeroAssets();
 
-        // Settle fee collector before state mutation
-        address feeCollector = depositorFeeCollector[owner];
-        if (feeCollector != address(0)) {
-            _settleFeeCollector(feeCollector);
-            if (assets >= feeCollectorStates[feeCollector].totalAUM) {
-                feeCollectorStates[feeCollector].totalAUM = 0;
-            } else {
-                feeCollectorStates[feeCollector].totalAUM -= assets;
-            }
-        }
-
         _burn(owner, shares);
         underlying.withdraw(assets, receiver, address(this));
+
+        // Reduce deposit baseline — floor at zero to handle rounding
+        totalDeposited = totalDeposited > assets ? totalDeposited - assets : 0;
     }
 
     /// @notice Withdraw exact assets by burning the required wrapper shares.
@@ -603,68 +307,45 @@ contract VaultWrapper is ERC20 {
         address receiver,
         address owner
     ) external returns (uint256 shares) {
-        // Approvals are disabled so only the owner can withdraw their own shares
         if (msg.sender != owner) revert NotShareOwner();
         if (assets == 0) revert ZeroAssets();
 
         // Round up shares so the owner burns enough for the exact asset withdrawal
-        shares = Math.mulDiv(
-            assets,
-            effectiveTotalSupply() + _VIRTUAL_SHARE_OFFSET,
+        shares = assets.mulDiv(
+            totalSupply() + _virtualShareOffset,
             totalAssets() + 1,
             Math.Rounding.Ceil
         );
         if (shares == 0) revert ZeroShares();
         if (balanceOf(owner) < shares) revert InsufficientBalance();
 
-        // Settle fee collector before state mutation
-        address feeCollector = depositorFeeCollector[owner];
-        if (feeCollector != address(0)) {
-            _settleFeeCollector(feeCollector);
-            if (assets >= feeCollectorStates[feeCollector].totalAUM) {
-                feeCollectorStates[feeCollector].totalAUM = 0;
-            } else {
-                feeCollectorStates[feeCollector].totalAUM -= assets;
-            }
-        }
-
         _burn(owner, shares);
         underlying.withdraw(assets, receiver, address(this));
+
+        totalDeposited = totalDeposited > assets ? totalDeposited - assets : 0;
     }
 
     // ──────────────────────────────────────────────────────────────
     // Fee Collection
     // ──────────────────────────────────────────────────────────────
 
-    /// @notice Collect accumulated virtual fee shares for a fee collector.
-    /// @dev Permissionless — anyone can call, but assets are always sent to the
-    ///      feeCollector address. Settles pending virtual shares, calculates
-    ///      their asset value, clears the settled state, and withdraws from the
-    ///      underlying vault directly to the fee collector.
-    /// @param feeCollector The fee collector whose fees to collect.
-    function collectFees(address feeCollector) external {
-        // Settle any pending (unsettled) virtual shares first
-        _settleFeeCollector(feeCollector);
+    /// @notice Collect accrued fees and send to the fee collector.
+    /// @dev Permissionless — anyone can call, assets always go to feeCollector.
+    ///      Resets the deposit baseline so future yield measurement starts fresh.
+    function collectFees() external {
+        uint256 gross = grossAssets();
+        if (gross <= totalDeposited) return;
 
-        FeeCollectorState storage state = feeCollectorStates[feeCollector];
-        uint256 virtualShares = state.settledVirtualShares;
+        uint256 yield = gross - totalDeposited;
+        uint256 feeAssets = yield.mulDiv(feePercentage, 10000, Math.Rounding.Floor);
+        if (feeAssets == 0) return;
 
-        // No-op when nothing to collect
-        if (virtualShares == 0) return;
+        // Withdraw fee from underlying vault directly to fee collector
+        underlying.withdraw(feeAssets, feeCollector, address(this));
 
-        // Calculate asset value BEFORE clearing state so effectiveTotalSupply
-        // still includes the virtual shares for accurate pricing
-        uint256 assets = convertToAssets(virtualShares);
+        // Reset baseline so yield after collection starts from zero
+        totalDeposited = gross - feeAssets;
 
-        // Clear settled virtual shares from both per-collector and global totals
-        state.settledVirtualShares = 0;
-        totalSettledVirtualShares -= virtualShares;
-
-        // Withdraw directly from the underlying vault to the fee collector
-        if (assets > 0) {
-            underlying.withdraw(assets, feeCollector, address(this));
-        }
-
-        emit FeesCollected(feeCollector, virtualShares, assets);
+        emit FeesCollected(feeCollector, yield, feeAssets);
     }
 }
