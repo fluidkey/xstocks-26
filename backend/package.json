@@ -31,6 +31,8 @@
     "synth:silent": "npx projen synth:silent",
     "test": "npx projen test",
     "test:alchemyWebhookListener": "npx projen test:alchemyWebhookListener",
+    "test:createStealthSafe": "npx projen test:createStealthSafe",
+    "test:executeAutoEarn": "npx projen test:executeAutoEarn",
     "test:watch": "npx projen test:watch",
     "upgrade": "npx projen upgrade",
     "watch": "npx projen watch",

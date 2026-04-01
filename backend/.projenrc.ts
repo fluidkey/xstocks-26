@@ -60,4 +60,14 @@ project.addTask('test:alchemyWebhookListener', {
   exec: 'npx ts-node src/lambda-functions/alchemy-webhook-listener/local-development/alchemy-webhook-listener.local-test.ts',
 });
 
+// Local test task for execute-auto-earn
+project.addTask('test:executeAutoEarn', {
+  exec: 'npx ts-node src/lambda-functions/execute-auto-earn/local-development/execute-auto-earn.local-test.ts',
+});
+
+// Local test task for create-stealth-safe
+project.addTask('test:createStealthSafe', {
+  exec: 'npx ts-node src/lambda-functions/create-stealth-safe/local-development/create-stealth-safe.local-test.ts',
+});
+
 project.synth();

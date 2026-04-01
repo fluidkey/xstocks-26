@@ -337,6 +337,22 @@
         }
       ]
     },
+    "test:createStealthSafe": {
+      "name": "test:createStealthSafe",
+      "steps": [
+        {
+          "exec": "npx ts-node src/lambda-functions/create-stealth-safe/local-development/create-stealth-safe.local-test.ts"
+        }
+      ]
+    },
+    "test:executeAutoEarn": {
+      "name": "test:executeAutoEarn",
+      "steps": [
+        {
+          "exec": "npx ts-node src/lambda-functions/execute-auto-earn/local-development/execute-auto-earn.local-test.ts"
+        }
+      ]
+    },
     "test:watch": {
       "name": "test:watch",
       "description": "Run jest in watch mode",

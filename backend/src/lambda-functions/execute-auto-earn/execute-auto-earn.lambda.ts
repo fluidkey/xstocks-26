@@ -51,7 +51,7 @@ export async function handler(event: ExecuteAutoEarnRequest) {
   const transport = http(providerUrl);
   const publicClient = createPublicClient({ chain: mainnet, transport });
   const walletClient = createWalletClient({ chain: mainnet, transport, account: relayerAccount });
-
+  /*
   // 3. Check the token balance on the stealth safe
   const balance = await publicClient.readContract({
     abi: erc20Abi,
@@ -66,10 +66,9 @@ export async function handler(event: ExecuteAutoEarnRequest) {
   }
 
   console.log(`Token balance: ${balance.toString()}`);
-
+  */
   // 4. Build the list of txs to batch
   const txs: Array<{ to: `0x${string}`; data: `0x${string}`; value: bigint }> = [];
-
   // 4a. If safe is not deployed yet, add the deployment tx
   const needsDeploy = record.deploymentStatus !== 'DEPLOYED';
   if (needsDeploy) {
@@ -85,7 +84,7 @@ export async function handler(event: ExecuteAutoEarnRequest) {
         },
         safeDeploymentConfig: {
           saltNonce: record.saltNonce,
-          safeVersion: '1.4.1',
+          safeVersion: '1.3.0',
         },
       },
     });
@@ -97,9 +96,10 @@ export async function handler(event: ExecuteAutoEarnRequest) {
       value: BigInt(deploymentTx.value),
     });
   }
-
+  console.log(txs);
   // 4b. Add the autoDeposit call
   // TODO: underlyingVault, feePercentage, nonce, signature, merkleProof need to be provided
+  /*
   const autoDepositCalldata = encodeFunctionData({
     abi: AUTO_EARN_ABI,
     functionName: 'autoDeposit',
@@ -120,7 +120,7 @@ export async function handler(event: ExecuteAutoEarnRequest) {
     data: autoDepositCalldata,
     value: BigInt(0),
   });
-
+  */
   // 5. If multiple txs, batch via MultiSend; otherwise send directly
   let txTo: `0x${string}`;
   let txData: `0x${string}`;

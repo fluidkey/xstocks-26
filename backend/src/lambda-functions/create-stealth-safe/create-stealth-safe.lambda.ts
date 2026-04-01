@@ -73,7 +73,6 @@ export async function handler(event: {
   const initializerExtra = getInitializerExtraFields();
 
   // 3. Predict the safe address (no on-chain tx yet)
-  const saltNonce = Math.floor(Math.random() * Math.pow(2, 32));
 
   const protocolKit = await Safe.init({
     provider: providerUrl,
@@ -86,8 +85,8 @@ export async function handler(event: {
         data: initializerExtra.data,
       },
       safeDeploymentConfig: {
-        saltNonce: toHex(saltNonce),
-        safeVersion: '1.4.1',
+        saltNonce: toHex(0),
+        safeVersion: '1.3.0',
       },
     },
   });
@@ -104,7 +103,7 @@ export async function handler(event: {
       safeAddress: safeAddress.toLowerCase(),
       ownerAddress: ownerAddress.toLowerCase(),
       deploymentStatus: 'NONE',
-      saltNonce: toHex(saltNonce),
+      saltNonce: toHex(0),
       initializerExtraTo: initializerExtra.to,
       initializerExtraData: initializerExtra.data,
       createdAt: Math.floor(Date.now() / 1000),
