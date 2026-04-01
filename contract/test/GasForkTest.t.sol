@@ -233,7 +233,7 @@ contract GasForkTest is Test {
     }
 
     // ───────────────────────────────────────────────────────────
-    // Baseline: Raw Morpho vault deposit (no wrapper, no module)
+    // Baseline: Raw Morpho deposit (no wrapper, no module)
     // ───────────────────────────────────────────────────────────
 
     function test_gas_baseline_morphoDeposit() public {
@@ -270,6 +270,53 @@ contract GasForkTest is Test {
         vm.stopPrank();
 
         console.log("=== BASELINE: Raw Morpho redeem (no wrapper) ===");
+        console.log("Gas used:", gasUsed);
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // Baseline: Morpho deposit via Safe execTransactionFromModule
+    // (same call hops as the module, but no wrapper)
+    // ───────────────────────────────────────────────────────────
+
+    function test_gas_baseline_morphoDepositViaSafe() public {
+        uint256 amount = 1_000e6;
+
+        // Measure the full approve + deposit flow via Safe, same as the module does
+        bytes memory approveData = abi.encodeWithSelector(IERC20.approve.selector, MORPHO_VAULT, amount);
+        bytes memory depositData = abi.encodeWithSelector(IERC4626.deposit.selector, amount, address(safe));
+
+        uint256 gasBefore = gasleft();
+        safe.execTransactionFromModule(USDC, 0, approveData, 0);
+        safe.execTransactionFromModule(MORPHO_VAULT, 0, depositData, 0);
+        uint256 gasUsed = gasBefore - gasleft();
+
+        console.log("=== BASELINE: Morpho deposit via Safe (approve+deposit) ===");
+        console.log("Gas used:", gasUsed);
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // Baseline: Morpho redeem via Safe execTransactionFromModule
+    // ───────────────────────────────────────────────────────────
+
+    function test_gas_baseline_morphoRedeemViaSafe() public {
+        uint256 amount = 1_000e6;
+
+        // Deposit first via Safe
+        bytes memory approveData = abi.encodeWithSelector(IERC20.approve.selector, MORPHO_VAULT, amount);
+        safe.execTransactionFromModule(USDC, 0, approveData, 0);
+        bytes memory depositData = abi.encodeWithSelector(IERC4626.deposit.selector, amount, address(safe));
+        safe.execTransactionFromModule(MORPHO_VAULT, 0, depositData, 0);
+
+        uint256 shares = IERC4626(MORPHO_VAULT).balanceOf(address(safe));
+
+        // Redeem via Safe
+        bytes memory redeemData = abi.encodeWithSelector(IERC4626.redeem.selector, shares, address(safe), address(safe));
+
+        uint256 gasBefore = gasleft();
+        safe.execTransactionFromModule(MORPHO_VAULT, 0, redeemData, 0);
+        uint256 gasUsed = gasBefore - gasleft();
+
+        console.log("=== BASELINE: Morpho redeem via Safe (no wrapper) ===");
         console.log("Gas used:", gasUsed);
     }
 

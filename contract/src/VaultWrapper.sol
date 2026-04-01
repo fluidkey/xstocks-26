@@ -37,6 +37,12 @@ import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 ///         BEFORE share math: it captures pending fees into `accruedFeeShares`
 ///         and resets `lastFeeTimestamp` to `block.timestamp` so the conversion
 ///         math doesn't double-count fees.
+///
+///      Gas optimization: mutative functions cache `totalAssets()` in transient
+///      storage (EIP-1153, Cancun) via `_snapshotFees()`. Subsequent calls to
+///      `totalAssets()` within the same transaction return the cached value,
+///      avoiding redundant external calls to the underlying vault. The cache
+///      auto-clears at the end of the transaction.
 contract VaultWrapper is ERC20 {
     using SafeERC20 for IERC20;
     using Math for uint256;
@@ -47,6 +53,13 @@ contract VaultWrapper is ERC20 {
 
     /// @notice Seconds in a 365-day year, used to prorate the annualized fee.
     uint256 public constant SECONDS_PER_YEAR = 365 days;
+
+    /// @dev Transient storage slot for caching totalAssets() during mutative calls.
+    ///      Stores `totalAssets + 1` so that 0 means "not cached" (since a cached
+    ///      value of 0 assets would be stored as 1). Auto-clears at end of tx.
+    ///      Slot chosen as keccak256("VaultWrapper.cachedTotalAssets") to avoid collisions.
+    bytes32 private constant _CACHED_TOTAL_ASSETS_SLOT =
+        0x02d1d826be667104648b9dd907405290c974559794727bef8517394599f5e50d;
 
     // ──────────────────────────────────────────────────────────────
     // Errors
@@ -227,11 +240,37 @@ contract VaultWrapper is ERC20 {
     // ──────────────────────────────────────────────────────────────
 
     /// @notice Total asset value held in the underlying vault.
-    /// @dev Raw gross value — fee deduction happens via supply dilution, not here.
+    /// @dev During mutative calls, returns a cached value from transient storage
+    ///      to avoid redundant external calls. View calls always hit the vault.
     function totalAssets() public view returns (uint256) {
+        // Check transient cache first — avoids repeated external calls within a tx
+        uint256 cached;
+        bytes32 slot = _CACHED_TOTAL_ASSETS_SLOT;
+        assembly { cached := tload(slot) }
+        if (cached != 0) return cached - 1;
+
+        return _fetchTotalAssets();
+    }
+
+    /// @dev Fetches totalAssets from the underlying vault (2 external calls).
+    ///      Separated so _snapshotFees can call it directly and cache the result.
+    function _fetchTotalAssets() internal view returns (uint256) {
         uint256 bal = underlying.balanceOf(address(this));
         if (bal == 0) return 0;
         return underlying.convertToAssets(bal);
+    }
+
+    /// @dev Write a totalAssets value into transient storage cache.
+    ///      Stores value + 1 so that 0 means "not cached".
+    function _cacheTotalAssets(uint256 value) internal {
+        bytes32 slot = _CACHED_TOTAL_ASSETS_SLOT;
+        assembly { tstore(slot, add(value, 1)) }
+    }
+
+    /// @dev Clear the transient storage cache.
+    function _clearCache() internal {
+        bytes32 slot = _CACHED_TOTAL_ASSETS_SLOT;
+        assembly { tstore(slot, 0) }
     }
 
     /// @notice Convert an asset amount to wrapper shares at the current post-fee rate.
@@ -317,6 +356,9 @@ contract VaultWrapper is ERC20 {
     ///      Resets accruedFeeShares to zero and bumps the timestamp so future
     ///      fee accrual starts fresh from now.
     function collectFees() external {
+        // Cache totalAssets for the duration of this call
+        _cacheTotalAssets(_fetchTotalAssets());
+
         uint256 pending = pendingFeeShares();
         uint256 toMint = accruedFeeShares + pending;
 
@@ -324,6 +366,9 @@ contract VaultWrapper is ERC20 {
         // so the next pendingFeeShares() calculation starts clean
         accruedFeeShares = 0;
         lastFeeTimestamp = block.timestamp;
+
+        // Clear cache before any external interaction
+        _clearCache();
 
         if (toMint == 0) return;
 
@@ -339,15 +384,21 @@ contract VaultWrapper is ERC20 {
     ///      timestamp. Must be called at the start of every mutative function
     ///      BEFORE any share conversion math.
     ///
-    ///      Two things happen here:
-    ///      1. `accruedFeeShares += pendingFeeShares()` — captures time-weighted
+    ///      Three things happen here:
+    ///      1. Fetch totalAssets once and cache it in transient storage so all
+    ///         subsequent calls to totalAssets() within this tx are free.
+    ///      2. `accruedFeeShares += pendingFeeShares()` — captures time-weighted
     ///         fees owed since the last snapshot so they aren't lost when we
     ///         reset the timestamp.
-    ///      2. `lastFeeTimestamp = block.timestamp` — resets the clock so that
+    ///      3. `lastFeeTimestamp = block.timestamp` — resets the clock so that
     ///         `pendingFeeShares()` returns 0 for the remainder of this call.
     ///         Without this, totalSupply() would double-count: the fees would
     ///         appear in both `accruedFeeShares` AND `pendingFeeShares()`.
     function _snapshotFees() internal {
+        // Fetch once from the underlying vault and cache for the rest of the tx
+        uint256 currentAssets = _fetchTotalAssets();
+        _cacheTotalAssets(currentAssets);
+
         accruedFeeShares += pendingFeeShares();
         lastFeeTimestamp = block.timestamp;
     }
@@ -366,6 +417,9 @@ contract VaultWrapper is ERC20 {
 
         shares = convertToShares(assets);
         if (shares == 0) revert ZeroShares();
+
+        // Clear cache before external interactions that change totalAssets
+        _clearCache();
 
         asset.safeTransferFrom(msg.sender, address(this), assets);
         SafeERC20.forceApprove(asset, address(underlying), assets);
@@ -390,6 +444,9 @@ contract VaultWrapper is ERC20 {
         );
         if (assets == 0) revert ZeroAssets();
 
+        // Clear cache before external interactions that change totalAssets
+        _clearCache();
+
         asset.safeTransferFrom(msg.sender, address(this), assets);
         SafeERC20.forceApprove(asset, address(underlying), assets);
         underlying.deposit(assets, address(this));
@@ -412,6 +469,9 @@ contract VaultWrapper is ERC20 {
 
         assets = convertToAssets(shares);
         if (assets == 0) revert ZeroAssets();
+
+        // Clear cache before external interactions that change totalAssets
+        _clearCache();
 
         _burn(owner, shares);
         underlying.withdraw(assets, receiver, address(this));
@@ -437,6 +497,9 @@ contract VaultWrapper is ERC20 {
         );
         if (shares == 0) revert ZeroShares();
         if (balanceOf(owner) < shares) revert InsufficientBalance();
+
+        // Clear cache before external interactions that change totalAssets
+        _clearCache();
 
         _burn(owner, shares);
         underlying.withdraw(assets, receiver, address(this));
