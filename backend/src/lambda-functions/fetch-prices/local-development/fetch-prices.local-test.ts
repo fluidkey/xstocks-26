@@ -1,5 +1,5 @@
-import * as lambdaLocal from 'lambda-local';
 import path from 'node:path';
+import * as lambdaLocal from 'lambda-local';
 
 void lambdaLocal.execute({
   event: {},
