@@ -1,7 +1,7 @@
 import assert from 'assert';
 import { getMultiSendCallOnlyDeployment } from '@safe-global/safe-deployments';
-import { AbiItem, createPublicClient, createWalletClient, encodeAbiParameters, encodeFunctionData, erc20Abi, http, keccak256 } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { AbiItem, createPublicClient, createWalletClient, encodeAbiParameters, encodeFunctionData, erc20Abi, hashMessage, http, keccak256, serializeSignature } from 'viem';
+import { privateKeyToAccount, sign } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
 import { AUTO_EARN_ABI, AUTO_EARN_MODULE_ADDRESS } from '../_utils/addresses-and-abis';
 import { dynamo } from '../_utils/dynamo-client';
@@ -59,6 +59,9 @@ export async function handler(event: ExecuteAutoEarnRequest) {
   // 4a. If safe is not deployed yet, add the deployment tx
   const needsDeploy = record.deploymentStatus !== 'DEPLOYED';
   if (needsDeploy) {
+    console.log('Debug — record.initializerExtraTo:', record.initializerExtraTo);
+    console.log('Debug — record.initializerExtraData:', record.initializerExtraData);
+    console.log('Debug — record.saltNonce:', record.saltNonce);
     const protocolKit = await initPredictedSafe({
       providerUrl,
       signerPrivateKey: relayerPrivateKey,
@@ -69,6 +72,10 @@ export async function handler(event: ExecuteAutoEarnRequest) {
     });
 
     const deploymentTx = await protocolKit.createSafeDeploymentTransaction();
+    const predictedAddr = await protocolKit.getAddress();
+    console.log('Debug — predicted address from protocolKit:', predictedAddr);
+    console.log('Debug — safeAddress from event:', safeAddress);
+    console.log('Debug — addresses match:', predictedAddr.toLowerCase() === safeAddress.toLowerCase());
     txs.push({
       to: deploymentTx.to as `0x${string}`,
       data: deploymentTx.data as `0x${string}`,
@@ -126,8 +133,48 @@ export async function handler(event: ExecuteAutoEarnRequest) {
     ),
   );
 
-  // EIP-191 personal sign — the contract uses toEthSignedMessageHash + ECDSA.recover
-  const moduleSignature = await moduleRelayerAccount.signMessage({ message: { raw: messageHash } });
+  // EIP-191 signed message — matches the contract's toEthSignedMessageHash + ECDSA.recover
+  const ethSignedMessageHash = hashMessage({ raw: messageHash });
+  const rawSignature = await sign({ hash: ethSignedMessageHash, privateKey: moduleRelayerPrivateKey as `0x${string}` });
+  const moduleSignature = serializeSignature(rawSignature);
+
+  console.log('Debug — messageHash:', messageHash);
+  console.log('Debug — module relayer address:', moduleRelayerAccount.address);
+  console.log('Debug — signature:', moduleSignature);
+  console.log('Debug — nonce:', nonce.toString());
+  console.log('Debug — balance:', balance.toString());
+  console.log('Debug — tokenAddress:', tokenAddress);
+  console.log('Debug — safeAddress:', safeAddress);
+  console.log('Debug — underlyingVault:', proofEntry.underlyingVault);
+  console.log('Debug — feePercentage:', proofEntry.feePercentage);
+  console.log('Debug — feeCollector:', proofEntry.feeCollector);
+
+  // Verify: recompute hash from the exact same values to double-check
+  const verifyEncoded = encodeAbiParameters(
+    [
+      { type: 'string' },
+      { type: 'uint256' },
+      { type: 'address' },
+      { type: 'uint256' },
+      { type: 'address' },
+      { type: 'uint256' },
+      { type: 'address' },
+      { type: 'address' },
+      { type: 'uint256' },
+    ],
+    [
+      'deposit',
+      BigInt(1),
+      tokenAddress as `0x${string}`,
+      balance,
+      proofEntry.underlyingVault as `0x${string}`,
+      BigInt(proofEntry.feePercentage),
+      proofEntry.feeCollector as `0x${string}`,
+      safeAddress as `0x${string}`,
+      nonce,
+    ],
+  );
+  console.log('Debug — raw abi.encode hex:', verifyEncoded);
 
   // 4e. Encode the autoDeposit call with the signed authorization
   const autoDepositCalldata = encodeFunctionData({
