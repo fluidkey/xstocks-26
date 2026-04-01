@@ -393,6 +393,252 @@ contract VaultWrapperSecurityTest is Test {
 
 
 // ═══════════════════════════════════════════════════════════════
+// VaultWrapper Advanced Fee Mechanism Tests
+// ═══════════════════════════════════════════════════════════════
+
+contract VaultWrapperFeeAdvancedTest is Test {
+    VaultWrapperFactory public factory;
+    MockERC20 public asset;
+    MockERC4626 public underlyingVault;
+    VaultWrapper public wrapper;
+
+    address constant FEE_COLLECTOR = address(0xFEE);
+    address constant DEPOSITOR = address(0xDEAD);
+    address constant DEPOSITOR2 = address(0xBEEF);
+    address constant ATTACKER = address(0xBAD);
+
+    function setUp() public {
+        factory = new VaultWrapperFactory();
+        asset = new MockERC20("Test Token", "TT", 18);
+        underlyingVault = new MockERC4626(IERC20(address(asset)), "Test Vault", "vTT");
+        wrapper = VaultWrapper(factory.deploy(address(underlyingVault), 100, FEE_COLLECTOR));
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // Donation attack: donating to underlying vault doesn't let
+    // attacker steal from depositors
+    // ───────────────────────────────────────────────────────────
+
+    function test_donationDoesNotHarmDepositors() public {
+        uint256 depositAmount = 100e18;
+        asset.mint(DEPOSITOR, depositAmount);
+
+        vm.startPrank(DEPOSITOR);
+        asset.approve(address(wrapper), depositAmount);
+        wrapper.deposit(depositAmount, DEPOSITOR);
+        vm.stopPrank();
+
+        // Attacker donates directly to underlying vault
+        uint256 donationAmount = 50e18;
+        asset.mint(ATTACKER, donationAmount);
+        vm.startPrank(ATTACKER);
+        asset.approve(address(underlyingVault), donationAmount);
+        underlyingVault.deposit(donationAmount, address(wrapper));
+        vm.stopPrank();
+
+        // Depositor redeems — should get back at LEAST their deposit
+        // (donation benefits all shareholders including depositor)
+        uint256 shares = wrapper.balanceOf(DEPOSITOR);
+        vm.prank(DEPOSITOR);
+        uint256 returned = wrapper.redeem(shares, DEPOSITOR, DEPOSITOR);
+
+        assertGe(returned, depositAmount, "Depositor must not lose value from donation");
+    }
+
+    function test_donationFeeIsProportional() public {
+        uint256 depositAmount = 1000e18;
+        asset.mint(DEPOSITOR, depositAmount);
+
+        vm.startPrank(DEPOSITOR);
+        asset.approve(address(wrapper), depositAmount);
+        wrapper.deposit(depositAmount, DEPOSITOR);
+        vm.stopPrank();
+
+        // Donate 100 tokens directly to underlying vault
+        asset.mint(address(underlyingVault), 100e18);
+
+        // Collect fees — fee collector should get ~1% of 100 = ~1 token worth of shares
+        wrapper.collectFees();
+        uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
+        uint256 feeValue = wrapper.convertToAssets(feeShares);
+
+        // Fee should be roughly 1% of the donation/yield, not more
+        assertApproxEqAbs(feeValue, 1e18, 1e16, "Fee must be ~1% of yield, not inflated by donation");
+
+        // Depositor should retain ~99% of the yield
+        uint256 depositorValue = wrapper.convertToAssets(wrapper.balanceOf(DEPOSITOR));
+        assertGt(depositorValue, depositAmount + 98e18, "Depositor must keep ~99% of yield");
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // Real-time fee reflection: convertToAssets reflects fees
+    // BEFORE collectFees is called
+    // ───────────────────────────────────────────────────────────
+
+    function test_feeReflectedInViewsBeforeCollection() public {
+        uint256 depositAmount = 1000e18;
+        asset.mint(DEPOSITOR, depositAmount);
+
+        vm.startPrank(DEPOSITOR);
+        asset.approve(address(wrapper), depositAmount);
+        uint256 shares = wrapper.deposit(depositAmount, DEPOSITOR);
+        vm.stopPrank();
+
+        // Simulate yield
+        asset.mint(address(underlyingVault), 100e18);
+
+        // BEFORE collectFees: convertToAssets should already reflect the fee dilution
+        uint256 valueBeforeCollect = wrapper.convertToAssets(shares);
+
+        // Collect fees
+        wrapper.collectFees();
+
+        // AFTER collectFees: value should be the same (no sudden drop)
+        uint256 valueAfterCollect = wrapper.convertToAssets(shares);
+
+        assertApproxEqAbs(
+            valueBeforeCollect, valueAfterCollect, 2,
+            "Share value must not drop when collectFees is called"
+        );
+    }
+
+    function test_totalSupplyIncludesVirtualFeeShares() public {
+        uint256 depositAmount = 1000e18;
+        asset.mint(DEPOSITOR, depositAmount);
+
+        vm.startPrank(DEPOSITOR);
+        asset.approve(address(wrapper), depositAmount);
+        wrapper.deposit(depositAmount, DEPOSITOR);
+        vm.stopPrank();
+
+        uint256 supplyBefore = wrapper.totalSupply();
+
+        // Simulate yield — totalSupply should grow due to virtual fee shares
+        asset.mint(address(underlyingVault), 100e18);
+
+        uint256 supplyAfter = wrapper.totalSupply();
+        assertGt(supplyAfter, supplyBefore, "totalSupply must include pending fee shares");
+
+        // pendingFeeShares should be non-zero
+        assertGt(wrapper.pendingFeeShares(), 0, "pendingFeeShares must be non-zero after yield");
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // Double-count prevention: deposit after yield doesn't
+    // double-count fees in accruedFeeShares + pendingFeeShares
+    // ───────────────────────────────────────────────────────────
+
+    function test_depositAfterYieldNoDoubleCount() public {
+        uint256 amount = 1000e18;
+        asset.mint(DEPOSITOR, amount);
+
+        vm.startPrank(DEPOSITOR);
+        asset.approve(address(wrapper), amount);
+        wrapper.deposit(500e18, DEPOSITOR);
+        vm.stopPrank();
+
+        // Yield accrues
+        asset.mint(address(underlyingVault), 50e18);
+
+        // Value before second deposit
+        uint256 valueBefore = wrapper.convertToAssets(wrapper.balanceOf(DEPOSITOR));
+
+        // Second deposit — should snapshot fees, not double-count
+        vm.startPrank(DEPOSITOR);
+        wrapper.deposit(500e18, DEPOSITOR);
+        vm.stopPrank();
+
+        // Value after second deposit should be valueBefore + ~500
+        uint256 valueAfter = wrapper.convertToAssets(wrapper.balanceOf(DEPOSITOR));
+        assertApproxEqAbs(
+            valueAfter, valueBefore + 500e18, 1e16,
+            "Second deposit must not cause value loss from double-counted fees"
+        );
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // Accumulated fees across multiple yield cycles
+    // ───────────────────────────────────────────────────────────
+
+    function test_accruedFeesAccumulateAcrossOperations() public {
+        uint256 amount = 1000e18;
+        asset.mint(DEPOSITOR, amount * 2);
+
+        vm.startPrank(DEPOSITOR);
+        asset.approve(address(wrapper), amount * 2);
+        wrapper.deposit(amount, DEPOSITOR);
+        vm.stopPrank();
+
+        // Yield cycle 1
+        asset.mint(address(underlyingVault), 100e18);
+
+        // Deposit again (snapshots fees into accruedFeeShares but doesn't mint)
+        vm.startPrank(DEPOSITOR);
+        wrapper.deposit(amount, DEPOSITOR);
+        vm.stopPrank();
+
+        // accruedFeeShares should be non-zero now
+        assertGt(wrapper.accruedFeeShares(), 0, "Accrued fees must be stored after deposit");
+
+        // Yield cycle 2
+        asset.mint(address(underlyingVault), 200e18);
+
+        // Now collectFees — should mint accrued + new pending in one shot
+        wrapper.collectFees();
+        uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
+        assertGt(feeShares, 0, "Fee collector must have shares from both yield cycles");
+
+        // accruedFeeShares should be zero after collection
+        assertEq(wrapper.accruedFeeShares(), 0, "Accrued must be zero after collectFees");
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // Fee collector redeems after multiple yield cycles
+    // ───────────────────────────────────────────────────────────
+
+    function test_feeCollectorRedeemAfterMultipleCycles() public {
+        uint256 amount = 1000e18;
+        asset.mint(DEPOSITOR, amount);
+
+        vm.startPrank(DEPOSITOR);
+        asset.approve(address(wrapper), amount);
+        wrapper.deposit(amount, DEPOSITOR);
+        vm.stopPrank();
+
+        uint256 totalYield;
+
+        // 3 yield cycles with collection each time
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 yield = (i + 1) * 10e18;
+            asset.mint(address(underlyingVault), yield);
+            totalYield += yield;
+            wrapper.collectFees();
+        }
+
+        // Fee collector redeems everything at once
+        uint256 feeShares = wrapper.balanceOf(FEE_COLLECTOR);
+        assertGt(feeShares, 0, "Fee collector must have shares");
+
+        vm.prank(FEE_COLLECTOR);
+        uint256 feeAssets = wrapper.redeem(feeShares, FEE_COLLECTOR, FEE_COLLECTOR);
+
+        // Should be roughly 1% of total yield. Slightly higher due to compounding
+        // across cycles (each collection shifts the share price baseline).
+        uint256 expectedFee = totalYield * 100 / 10000;
+        assertApproxEqAbs(feeAssets, expectedFee, 2e16, "Fee must be ~1% of total yield");
+
+        // Depositor should still be able to withdraw
+        uint256 depositorShares = wrapper.balanceOf(DEPOSITOR);
+        vm.prank(DEPOSITOR);
+        uint256 returned = wrapper.redeem(depositorShares, DEPOSITOR, DEPOSITOR);
+
+        // Total extracted must not exceed deposited + yield
+        assertLe(feeAssets + returned, amount + totalYield + 1, "Cannot extract more than exists");
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
 // SafeEarnModule Security Tests
 // ═══════════════════════════════════════════════════════════════
 
@@ -621,6 +867,38 @@ contract SafeEarnModuleSecurityTest is Test {
             address(asset), 50e18,
             _vaultParams(),
             address(falseSafe), 0, _signHash(msgHash), new bytes32[](0)
+        );
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // Cross-chain merkle leaf isolation: leaf from chain A
+    // must not verify on chain B
+    // ───────────────────────────────────────────────────────────
+
+    function test_crossChainMerkleLeafRejected() public {
+        // Build a leaf for a different chainId (current + 1)
+        uint256 otherChainId = block.chainid + 1;
+        bytes32 otherChainLeaf = keccak256(abi.encodePacked(
+            otherChainId, address(underlyingVault), FEE_PCT, FEE_COLLECTOR
+        ));
+
+        // Install a Safe with the other-chain leaf as root (single-leaf tree)
+        TestSafe otherSafe = new TestSafe();
+        vm.prank(address(otherSafe));
+        module.onInstall(abi.encode(otherChainLeaf));
+
+        // Sign a valid deposit for this chain
+        bytes32 msgHash = keccak256(abi.encode(
+            "deposit", block.chainid, address(asset), uint256(50e18),
+            address(underlyingVault), FEE_PCT, FEE_COLLECTOR, address(otherSafe), uint256(0)
+        ));
+
+        // Merkle proof should fail because the leaf was built with a different chainId
+        vm.expectRevert(SafeEarnModule.InvalidMerkleProof.selector);
+        module.autoDeposit(
+            address(asset), 50e18,
+            _vaultParams(),
+            address(otherSafe), 0, _signHash(msgHash), new bytes32[](0)
         );
     }
 }
