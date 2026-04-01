@@ -1,0 +1,186 @@
+openapi: 3.0.3
+info:
+  title: xStocks API
+  version: 1.0.0
+  description: xStocks backend API for managing wallet addresses and transactions.
+
+servers:
+  - url: https://5o381m93aa.execute-api.eu-west-1.amazonaws.com/v1
+
+paths:
+  /address:
+    post:
+      summary: Create a new stealth safe and track its address
+      operationId: createStealthSafe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStealthSafeRequest'
+      responses:
+        '200':
+          description: Stealth safe created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateStealthSafeResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /user/{id_user}/address:
+    get:
+      summary: Get addresses registered by a user
+      operationId: getUserAddresses
+      parameters:
+        - name: id_user
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The user identifier
+      responses:
+        '200':
+          description: List of user addresses
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserAddress'
+        '400':
+          description: Missing id_user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /address/{address}/transaction:
+    get:
+      summary: Get transactions for an address
+      operationId: getAddressTransactions
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The wallet address (lowercase)
+      responses:
+        '200':
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Missing address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    CreateStealthSafeRequest:
+      type: object
+      required:
+        - idUser
+        - ownerAddress
+      properties:
+        idUser:
+          type: string
+          example: "user-123"
+        ownerAddress:
+          type: string
+          description: The owner address for the stealth safe
+          example: "0x90A2a4c76b5D8c0bc892A69EA28Aa775a8f2dD48"
+
+    CreateStealthSafeResponse:
+      type: object
+      properties:
+        safeAddress:
+          type: string
+          description: The predicted stealth safe address
+          example: "0x1234567890abcdef1234567890abcdef12345678"
+        ownerAddress:
+          type: string
+          example: "0x90A2a4c76b5D8c0bc892A69EA28Aa775a8f2dD48"
+        deploymentStatus:
+          type: string
+          enum:
+            - NONE
+            - DEPLOYED
+          example: "NONE"
+
+    UserAddress:
+      type: object
+      properties:
+        address:
+          type: string
+          description: Lowercase wallet address
+          example: "0x90a2a4c76b5d8c0bc892a69ea28aa775a8f2dd48"
+        addedAt:
+          type: number
+          description: Unix timestamp in seconds
+          example: 1711900800
+
+    Transaction:
+      type: object
+      properties:
+        txHash:
+          type: string
+          example: "0x98196e3cd1d828013547f0c4851d9ca8f7e38cfd2a8aa002bda8dc0a3b349389"
+        blockNumber:
+          type: number
+          example: 24778030
+        timestamp:
+          type: number
+          description: Unix timestamp in seconds
+          example: 1774965395
+        from:
+          type: string
+          example: "0x6faec2944071b2a5ebfd1b08f43f29597aad8ca1"
+        to:
+          type: string
+          example: "0x92a494bd2bbf727eef5703f3e197d0b4df99e96a"
+        amount:
+          type: string
+          description: Raw amount in smallest token unit (decimal string converted from hex)
+          example: "772114"
+        tokenContract:
+          type: string
+          description: Token contract address (empty string for native transfers)
+          example: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+        type:
+          type: string
+          enum:
+            - NATIVE_EXTERNAL
+            - NATIVE_INTERNAL
+            - ERC20_TRANSFER
+          example: "ERC20_TRANSFER"
+        direction:
+          type: string
+          enum:
+            - IN
+            - OUT
+          example: "IN"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Invalid request"

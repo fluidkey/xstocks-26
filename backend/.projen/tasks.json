@@ -1,0 +1,406 @@
+{
+  "tasks": {
+    "build": {
+      "name": "build",
+      "description": "Full release build",
+      "steps": [
+        {
+          "spawn": "default"
+        },
+        {
+          "spawn": "pre-compile"
+        },
+        {
+          "spawn": "compile"
+        },
+        {
+          "spawn": "post-compile"
+        },
+        {
+          "spawn": "test"
+        },
+        {
+          "spawn": "package"
+        }
+      ]
+    },
+    "bundle": {
+      "name": "bundle",
+      "description": "Prepare assets",
+      "steps": [
+        {
+          "spawn": "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda"
+        },
+        {
+          "spawn": "bundle:lambda-functions/create-stealth-safe/create-stealth-safe.lambda"
+        },
+        {
+          "spawn": "bundle:lambda-functions/execute-auto-earn/execute-auto-earn.lambda"
+        },
+        {
+          "spawn": "bundle:lambda-functions/fetch-prices/fetch-prices.lambda"
+        },
+        {
+          "spawn": "bundle:lambda-functions/get-address-transactions/get-address-transactions.lambda"
+        },
+        {
+          "spawn": "bundle:lambda-functions/get-user-addresses/get-user-addresses.lambda"
+        }
+      ]
+    },
+    "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda": {
+      "name": "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda",
+      "description": "Create a JavaScript bundle from src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
+        }
+      ]
+    },
+    "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda:watch": {
+      "name": "bundle:lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda:watch",
+      "description": "Continuously update the JavaScript bundle from src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/alchemy-webhook-listener/alchemy-webhook-listener.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
+        }
+      ]
+    },
+    "bundle:lambda-functions/create-stealth-safe/create-stealth-safe.lambda": {
+      "name": "bundle:lambda-functions/create-stealth-safe/create-stealth-safe.lambda",
+      "description": "Create a JavaScript bundle from src/lambda-functions/create-stealth-safe/create-stealth-safe.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/create-stealth-safe/create-stealth-safe.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/create-stealth-safe/create-stealth-safe.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
+        }
+      ]
+    },
+    "bundle:lambda-functions/create-stealth-safe/create-stealth-safe.lambda:watch": {
+      "name": "bundle:lambda-functions/create-stealth-safe/create-stealth-safe.lambda:watch",
+      "description": "Continuously update the JavaScript bundle from src/lambda-functions/create-stealth-safe/create-stealth-safe.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/create-stealth-safe/create-stealth-safe.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/create-stealth-safe/create-stealth-safe.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
+        }
+      ]
+    },
+    "bundle:lambda-functions/execute-auto-earn/execute-auto-earn.lambda": {
+      "name": "bundle:lambda-functions/execute-auto-earn/execute-auto-earn.lambda",
+      "description": "Create a JavaScript bundle from src/lambda-functions/execute-auto-earn/execute-auto-earn.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/execute-auto-earn/execute-auto-earn.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/execute-auto-earn/execute-auto-earn.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
+        }
+      ]
+    },
+    "bundle:lambda-functions/execute-auto-earn/execute-auto-earn.lambda:watch": {
+      "name": "bundle:lambda-functions/execute-auto-earn/execute-auto-earn.lambda:watch",
+      "description": "Continuously update the JavaScript bundle from src/lambda-functions/execute-auto-earn/execute-auto-earn.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/execute-auto-earn/execute-auto-earn.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/execute-auto-earn/execute-auto-earn.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
+        }
+      ]
+    },
+    "bundle:lambda-functions/fetch-prices/fetch-prices.lambda": {
+      "name": "bundle:lambda-functions/fetch-prices/fetch-prices.lambda",
+      "description": "Create a JavaScript bundle from src/lambda-functions/fetch-prices/fetch-prices.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/fetch-prices/fetch-prices.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/fetch-prices/fetch-prices.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
+        }
+      ]
+    },
+    "bundle:lambda-functions/fetch-prices/fetch-prices.lambda:watch": {
+      "name": "bundle:lambda-functions/fetch-prices/fetch-prices.lambda:watch",
+      "description": "Continuously update the JavaScript bundle from src/lambda-functions/fetch-prices/fetch-prices.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/fetch-prices/fetch-prices.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/fetch-prices/fetch-prices.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
+        }
+      ]
+    },
+    "bundle:lambda-functions/get-address-transactions/get-address-transactions.lambda": {
+      "name": "bundle:lambda-functions/get-address-transactions/get-address-transactions.lambda",
+      "description": "Create a JavaScript bundle from src/lambda-functions/get-address-transactions/get-address-transactions.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/get-address-transactions/get-address-transactions.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/get-address-transactions/get-address-transactions.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
+        }
+      ]
+    },
+    "bundle:lambda-functions/get-address-transactions/get-address-transactions.lambda:watch": {
+      "name": "bundle:lambda-functions/get-address-transactions/get-address-transactions.lambda:watch",
+      "description": "Continuously update the JavaScript bundle from src/lambda-functions/get-address-transactions/get-address-transactions.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/get-address-transactions/get-address-transactions.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/get-address-transactions/get-address-transactions.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
+        }
+      ]
+    },
+    "bundle:lambda-functions/get-user-addresses/get-user-addresses.lambda": {
+      "name": "bundle:lambda-functions/get-user-addresses/get-user-addresses.lambda",
+      "description": "Create a JavaScript bundle from src/lambda-functions/get-user-addresses/get-user-addresses.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/get-user-addresses/get-user-addresses.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/get-user-addresses/get-user-addresses.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/*"
+        }
+      ]
+    },
+    "bundle:lambda-functions/get-user-addresses/get-user-addresses.lambda:watch": {
+      "name": "bundle:lambda-functions/get-user-addresses/get-user-addresses.lambda:watch",
+      "description": "Continuously update the JavaScript bundle from src/lambda-functions/get-user-addresses/get-user-addresses.lambda.ts",
+      "steps": [
+        {
+          "exec": "esbuild --bundle src/lambda-functions/get-user-addresses/get-user-addresses.lambda.ts --target=\"node22\" --platform=\"node\" --outfile=\"assets/lambda-functions/get-user-addresses/get-user-addresses.lambda/index.js\" --tsconfig=\"tsconfig.dev.json\" --external:@aws-sdk/* --watch"
+        }
+      ]
+    },
+    "clobber": {
+      "name": "clobber",
+      "description": "hard resets to HEAD of origin and cleans the local repo",
+      "env": {
+        "BRANCH": "$(git branch --show-current)"
+      },
+      "steps": [
+        {
+          "exec": "git checkout -b scratch",
+          "name": "save current HEAD in \"scratch\" branch"
+        },
+        {
+          "exec": "git checkout $BRANCH"
+        },
+        {
+          "exec": "git fetch origin",
+          "name": "fetch latest changes from origin"
+        },
+        {
+          "exec": "git reset --hard origin/$BRANCH",
+          "name": "hard reset to origin commit"
+        },
+        {
+          "exec": "git clean -fdx",
+          "name": "clean all untracked files"
+        },
+        {
+          "say": "ready to rock! (unpushed commits are under the \"scratch\" branch)"
+        }
+      ],
+      "condition": "git diff --exit-code > /dev/null"
+    },
+    "compile": {
+      "name": "compile",
+      "description": "Only compile"
+    },
+    "default": {
+      "name": "default",
+      "description": "Synthesize project files",
+      "steps": [
+        {
+          "exec": "ts-node --project tsconfig.dev.json .projenrc.ts"
+        },
+        {
+          "exec": "chmod -R u+w .projen/ cdk.json .eslintrc.json .gitattributes .gitignore LICENSE .npmignore tsconfig.dev.json tsconfig.json .yarnrc.yml || true"
+        }
+      ]
+    },
+    "deploy": {
+      "name": "deploy",
+      "description": "Deploys your CDK app to the AWS cloud",
+      "steps": [
+        {
+          "exec": "cdk deploy",
+          "receiveArgs": true
+        }
+      ]
+    },
+    "destroy": {
+      "name": "destroy",
+      "description": "Destroys your cdk app in the AWS cloud",
+      "steps": [
+        {
+          "exec": "cdk destroy",
+          "receiveArgs": true
+        }
+      ]
+    },
+    "diff": {
+      "name": "diff",
+      "description": "Diffs the currently deployed app against your code",
+      "steps": [
+        {
+          "exec": "cdk diff"
+        }
+      ]
+    },
+    "eject": {
+      "name": "eject",
+      "description": "Remove projen from the project",
+      "env": {
+        "PROJEN_EJECTING": "true"
+      },
+      "steps": [
+        {
+          "spawn": "default"
+        }
+      ]
+    },
+    "eslint": {
+      "name": "eslint",
+      "description": "Runs eslint against the codebase",
+      "env": {
+        "ESLINT_USE_FLAT_CONFIG": "false",
+        "NODE_NO_WARNINGS": "1"
+      },
+      "steps": [
+        {
+          "exec": "eslint --ext .ts,.tsx --fix --no-error-on-unmatched-pattern $@ src test build-tools projenrc .projenrc.ts",
+          "receiveArgs": true
+        }
+      ]
+    },
+    "install": {
+      "name": "install",
+      "description": "Install project dependencies and update lockfile (non-frozen)",
+      "steps": [
+        {
+          "exec": "yarn install --no-immutable"
+        }
+      ]
+    },
+    "install:ci": {
+      "name": "install:ci",
+      "description": "Install project dependencies using frozen lockfile",
+      "steps": [
+        {
+          "exec": "yarn install --immutable"
+        }
+      ]
+    },
+    "package": {
+      "name": "package",
+      "description": "Creates the distribution package"
+    },
+    "post-compile": {
+      "name": "post-compile",
+      "description": "Runs after successful compilation",
+      "steps": [
+        {
+          "spawn": "synth:silent"
+        }
+      ]
+    },
+    "post-upgrade": {
+      "name": "post-upgrade",
+      "description": "Runs after upgrading dependencies"
+    },
+    "pre-compile": {
+      "name": "pre-compile",
+      "description": "Prepare the project for compilation"
+    },
+    "synth": {
+      "name": "synth",
+      "description": "Synthesizes your cdk app into cdk.out",
+      "steps": [
+        {
+          "exec": "cdk synth"
+        }
+      ]
+    },
+    "synth:silent": {
+      "name": "synth:silent",
+      "description": "Synthesizes your cdk app into cdk.out and suppresses the template in stdout (part of \"yarn build\")",
+      "steps": [
+        {
+          "exec": "cdk synth -q"
+        }
+      ]
+    },
+    "test": {
+      "name": "test",
+      "description": "Run tests",
+      "steps": [
+        {
+          "exec": "jest --passWithNoTests --updateSnapshot",
+          "receiveArgs": true
+        },
+        {
+          "spawn": "eslint"
+        }
+      ]
+    },
+    "test:alchemyWebhookListener": {
+      "name": "test:alchemyWebhookListener",
+      "steps": [
+        {
+          "exec": "npx ts-node src/lambda-functions/alchemy-webhook-listener/local-development/alchemy-webhook-listener.local-test.ts"
+        }
+      ]
+    },
+    "test:createStealthSafe": {
+      "name": "test:createStealthSafe",
+      "steps": [
+        {
+          "exec": "npx ts-node src/lambda-functions/create-stealth-safe/local-development/create-stealth-safe.local-test.ts"
+        }
+      ]
+    },
+    "test:executeAutoEarn": {
+      "name": "test:executeAutoEarn",
+      "steps": [
+        {
+          "exec": "npx ts-node src/lambda-functions/execute-auto-earn/local-development/execute-auto-earn.local-test.ts"
+        }
+      ]
+    },
+    "test:watch": {
+      "name": "test:watch",
+      "description": "Run jest in watch mode",
+      "steps": [
+        {
+          "exec": "jest --watch"
+        }
+      ]
+    },
+    "upgrade": {
+      "name": "upgrade",
+      "description": "upgrade dependencies",
+      "env": {
+        "CI": "0"
+      },
+      "steps": [
+        {
+          "exec": "yarn dlx npm-check-updates@18 --upgrade --target=minor --peer --no-deprecated --dep=dev,peer,prod,optional --filter=@types/jest,@types/node,esbuild,eslint-import-resolver-typescript,eslint-plugin-import,jest,projen,ts-jest,ts-node,typescript,@safe-global/protocol-kit,@safe-global/safe-deployments"
+        },
+        {
+          "exec": "yarn install --no-immutable"
+        },
+        {
+          "exec": "yarn up @stylistic/eslint-plugin @types/aws-lambda @types/jest @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser aws-cdk esbuild eslint-import-resolver-typescript eslint-plugin-import eslint jest jest-junit projen ts-jest ts-node typescript @aws-sdk/client-dynamodb @aws-sdk/client-lambda @aws-sdk/client-s3 @aws-sdk/client-ssm @aws-sdk/lib-dynamodb @safe-global/protocol-kit @safe-global/safe-deployments aws-cdk-lib aws-lambda constructs lambda-local viem"
+        },
+        {
+          "exec": "npx projen"
+        },
+        {
+          "spawn": "post-upgrade"
+        }
+      ]
+    },
+    "watch": {
+      "name": "watch",
+      "description": "Watches changes in your source code and rebuilds and deploys to the current account",
+      "steps": [
+        {
+          "exec": "cdk deploy --hotswap"
+        },
+        {
+          "exec": "cdk watch"
+        }
+      ]
+    }
+  },
+  "env": {
+    "PATH": "$(npx -c \"node --print process.env.PATH\")"
+  },
+  "//": "~~ Generated by projen. To modify, edit .projenrc.ts and run \"npx projen\"."
+}
